@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
+from backend.api.security import require_csrf
 from backend.agents.tool_registry import tool_registry
 from backend.database.models import EmailSummary, SyncRun, User
 from backend.database.session import get_db
@@ -20,6 +21,7 @@ from backend.services.integration_service import integration_service
 from backend.schemas.email import (
     CategoryUpdate,
     DraftRequest,
+    EmailDetail,
     EmailItem,
     EmailPage,
     SendRequest,
@@ -77,16 +79,22 @@ def list_emails(
     )
 
 
-@router.get("/emails/{email_id}", response_model=EmailItem)
-def get_email(
+@router.get("/emails/{email_id}", response_model=EmailDetail)
+async def get_email(
     email_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
 ):
     row = get_summary(db, user.id, email_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return _as_item(row)
+    try:
+        thread = await integration_service.get_thread(email_id)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail="Could not retrieve conversation messages.") from exc
+    item = _as_item(row).model_dump()
+    return EmailDetail.model_validate({**item, "messages": thread.get("messages", [])})
 
 
 @router.patch("/emails/{email_id}/category", response_model=EmailItem)
@@ -107,6 +115,7 @@ def sync_mailbox(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
 ):
     running = db.scalar(
         select(SyncRun).where(
@@ -179,6 +188,7 @@ async def create_draft(
     payload: DraftRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
 ):
     row = get_summary(db, user.id, email_id)
     if row is None:
@@ -202,6 +212,7 @@ async def send_draft(
     payload: SendRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
 ):
     row = get_summary(db, user.id, email_id)
     if row is None:
