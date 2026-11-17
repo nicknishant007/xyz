@@ -19,7 +19,7 @@ class GetThreadInput(BaseModel):
 
 
 class CreateImportantReplyDraftInput(BaseModel):
-    user_id: str = Field(description="Authenticated user's internal ID, supplied by the workflow.")
+    user_id: str | None = Field(default=None, description="Authenticated user's internal ID, supplied by the workflow.")
     thread_id: str = Field(description="ID of the conversation to reply to.")
     body: str = Field(min_length=1, max_length=20000, description="Reply text to save as a draft.")
 
@@ -56,7 +56,7 @@ async def get_gmail_profile() -> dict:
 
 
 @tool(args_schema=CreateImportantReplyDraftInput)
-async def create_important_reply_draft_tool(user_id: str, thread_id: str, body: str) -> dict:
+async def create_important_reply_draft_tool(user_id: str | None = None, thread_id: str = "", body: str = "") -> dict:
     """Create a reply draft only when the saved conversation category is Important.
 
     The backend verifies user ownership, category, and reply decision. This tool
@@ -65,7 +65,7 @@ async def create_important_reply_draft_tool(user_id: str, thread_id: str, body: 
     db = SessionLocal()
     try:
         return await create_important_reply_draft(
-            db, user_id, thread_id, body, reuse_existing=True
+            db, user_id or "", thread_id, body, reuse_existing=True
         )
     finally:
         db.close()
