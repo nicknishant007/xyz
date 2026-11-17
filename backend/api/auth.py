@@ -1,9 +1,11 @@
 """Google OpenID sign-in. Mock mode creates a local demo identity only."""
+import secrets
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from backend.api.security import require_csrf
 from backend.config.settings import settings
 from backend.database.models import User
 from backend.database.session import get_db
@@ -51,8 +53,12 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             identity = token.get("userinfo") or {}
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Google sign-in failed.") from exc
-        if not identity.get("sub") or not identity.get("email"):
-            raise HTTPException(status_code=400, detail="Google did not return a valid user profile.")
+        if (
+            not identity.get("sub")
+            or not identity.get("email")
+            or identity.get("email_verified") is not True
+        ):
+            raise HTTPException(status_code=400, detail="Google did not return a verified user profile.")
 
     user = get_or_create_google_user(
         db,
@@ -61,7 +67,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         full_name=identity.get("name", ""),
         profile_picture=identity.get("picture"),
     )
+    request.session.clear()
     request.session["user_id"] = user.id
+    request.session["csrf_token"] = secrets.token_urlsafe(32)
     return RedirectResponse(url=settings.frontend_url)
 
 
@@ -74,10 +82,23 @@ async def current_user(request: Request, db: Session = Depends(get_db)):
     if user is None:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Session user no longer exists.")
-    return {"id": user.id, "email": user.email, "name": user.full_name, "picture": user.profile_picture}
+    csrf_token = request.session.get("csrf_token")
+    if not csrf_token:
+        csrf_token = secrets.token_urlsafe(32)
+        request.session["csrf_token"] = csrf_token
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.full_name,
+        "picture": user.profile_picture,
+        "csrf_token": csrf_token,
+    }
 
 
 @router.post("/auth/logout")
-async def logout(request: Request):
+async def logout(
+    request: Request,
+    csrf_token: str = Depends(require_csrf),
+):
     request.session.clear()
     return {"status": "signed_out"}
