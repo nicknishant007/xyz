@@ -1,8 +1,8 @@
 # Gmail AI Mail Manager
 
-A modular FastAPI starter for an AI-assisted Gmail dashboard. External services are configured through environment URLs and default to local mock endpoints, so development does not require Gmail credentials or send real mail.
+A modular FastAPI + React starter for an AI-assisted Gmail dashboard. External service URLs and credentials are environment-configurable; mock mode works without external accounts and never sends real email.
 
-## Run
+## Run the API
 
 Requires Python 3.11+.
 
@@ -14,12 +14,23 @@ Requires Python 3.11+.
 
 API docs: http://localhost:8000/docs
 
-Set MOCK_INTEGRATIONS=true to use the built-in fake Gmail and AI service. The fake provider returns sample conversations, creates local draft IDs, and never sends email. To connect real Google/Gemini APIs later, set MOCK_INTEGRATIONS=false and configure the corresponding credentials and base URLs.
+## Run the dashboard
+
+    cd frontend
+    npm install
+    Copy-Item .env.example .env
+    npm run dev
+
+Open http://localhost:5173. In default mock mode, **Continue with Google** creates a local demo user, stores that user in the configured database, and redirects back to the dashboard. The fake Gmail provider returns sample conversations and creates demo draft IDs. Simulated send requests never contact Gmail.
 
 ## Configuration
 
-See .env.example. API URLs are centralized in backend/config/settings.py. Do not commit .env or real credentials.
+Environment settings live in backend/config/settings.py. SQLite is the default for local development. Set DATABASE_URL to a PostgreSQL URL for a hosted database; the PostgreSQL driver is included. Set MOCK_INTEGRATIONS=false and provide Google OAuth credentials to use the OpenID profile sign-in flow. That flow requests identity scopes only; it does not connect a Gmail mailbox.
+
+Do not commit .env or real credentials. Use HTTPS and set COOKIE_SECURE=true when hosting the application.
 
 ## Current scope
 
-This first commit establishes configuration, a working API foundation, mock integration adapters, and typed email/sync schemas. PostgreSQL persistence, OAuth, LangGraph classification, and the React dashboard are subsequent implementation phases; mock endpoints make the initial API usable without external accounts.
+Implemented: settings, SQLAlchemy schema and user repository, demo/Google OpenID sign-in, email list/detail mock API, sync/draft/simulated-send routes, and the dashboard.
+
+Still needed before real mailbox use: protect email APIs with authenticated-user scoping, store encrypted Google refresh tokens after Gmail consent, add Gmail thread/draft adapters, persist summaries and sync jobs through repositories, add Alembic migrations, and implement Gemini/LangGraph analysis.
