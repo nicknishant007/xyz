@@ -42,6 +42,36 @@ class IntegrationService:
             },
         ]
 
+    async def get_thread(self, thread_id: str) -> dict:
+        rows = await self.list_threads()
+        for row in rows:
+            if row["thread_id"] == thread_id:
+                latest_at = row["received_at"]
+                messages = [
+                    {
+                        "message_id": f"{thread_id}-message-001",
+                        "sender_name": row["sender_name"],
+                        "sender_email": row["sender_email"],
+                        "timestamp": latest_at,
+                        "body_text": row["summary"],
+                        "is_user": False,
+                    }
+                ]
+                if thread_id == "mock-thread-001":
+                    messages.insert(
+                        0,
+                        {
+                            "message_id": f"{thread_id}-message-000",
+                            "sender_name": "Demo User",
+                            "sender_email": "demo@example.test",
+                            "timestamp": latest_at,
+                            "body_text": "Thanks for sending this over. I will take a look.",
+                            "is_user": True,
+                        },
+                    )
+                return {**row, "messages": messages}
+        raise ValueError("Conversation not found.")
+
     async def create_draft(self, thread_id: str, body: str) -> dict:
         if not settings.mock_integrations:
             raise RuntimeError("Live Gmail adapter is not implemented; enable mock mode.")
