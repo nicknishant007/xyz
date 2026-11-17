@@ -82,9 +82,6 @@ async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
     if settings.mock_ai or not settings.gemini_api_key:
         return [_mock_analysis(thread) for thread in threads]
 
-    try:
-    except Exception:
-        return [_review_fallback(thread["thread_id"]) for thread in threads]
     expected_ids = [thread["thread_id"] for thread in threads]
     payload = [
         {
