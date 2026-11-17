@@ -26,12 +26,12 @@ async def execute_sync_job(user_id: str, job_id: str) -> None:
             run.failed = result.get("failed_count", 0)
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
-    except Exception as exc:
+    except Exception:
         db.rollback()
         run = db.get(SyncRun, job_id)
         if run is not None:
             run.status = "failed"
-            run.error_message = str(exc)[:1000]
+            run.error_message = "Sync failed due to an internal processing error."
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
     finally:
