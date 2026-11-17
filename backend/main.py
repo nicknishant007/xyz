@@ -5,9 +5,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.routes import router
 from backend.config.settings import settings
-from backend.database.session import init_db
 
-app = FastAPI(title=settings.app_name, version="0.2.0", on_startup=[init_db])
+app = FastAPI(title=settings.app_name, version="0.3.0")
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
