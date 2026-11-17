@@ -37,4 +37,14 @@ async def get_gmail_thread(thread_id: str) -> dict:
     return await integration_service.get_thread(thread_id)
 
 
-READ_ONLY_GMAIL_TOOLS = (list_gmail_threads, get_gmail_thread)
+
+@tool
+async def get_gmail_profile() -> dict:
+    """Return the connected mailbox address and message/thread counts.
+
+    This is a read-only tool and returns fake mailbox metadata in mock mode.
+    """
+    return await integration_service.get_profile()
+
+
+READ_ONLY_GMAIL_TOOLS = (list_gmail_threads, get_gmail_thread, get_gmail_profile)
