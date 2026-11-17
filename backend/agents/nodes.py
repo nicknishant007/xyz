@@ -4,6 +4,7 @@ import json
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from backend.agents.prompts import CLASSIFY_EMAIL_SYSTEM_PROMPT, REPAIR_OUTPUT_PROMPT
+from backend.agents.schemas import EmailAnalysisBatch
 from backend.agents.state import AnalysisState
 from backend.agents.tool_registry import tool_registry
 from backend.config.settings import settings
@@ -50,7 +51,7 @@ def _mock_analysis(thread: dict[str, Any]) -> EmailAnalysis:
     )
 
 
-def _get_structured_model():
+def _get_structured_model(schema):
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     if not settings.gemini_api_key:
@@ -60,14 +61,14 @@ def _get_structured_model():
         google_api_key=settings.gemini_api_key,
         temperature=0,
     )
-    return model.with_structured_output(EmailAnalysis, method="json_schema")
+    return model.with_structured_output(schema, method="json_schema")
 
 
 async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> EmailAnalysis:
     if settings.mock_integrations:
         return _mock_analysis(thread)
 
-    model = _get_structured_model()
+    model = _get_structured_model(EmailAnalysis)
     system_prompt = CLASSIFY_EMAIL_SYSTEM_PROMPT
     if repair:
         system_prompt += "\n" + REPAIR_OUTPUT_PROMPT
@@ -88,6 +89,43 @@ async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> Em
         if not repair:
             return await classify_thread(thread, repair=True)
         return _review_fallback(thread["thread_id"])
+
+
+async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
+    if settings.mock_integrations:
+        return [_mock_analysis(thread) for thread in threads]
+
+    model = _get_structured_model(EmailAnalysisBatch)
+    expected_ids = [thread["thread_id"] for thread in threads]
+    payload = [
+        {
+            "thread_id": thread["thread_id"],
+            "subject": thread.get("subject", ""),
+            "sender": thread.get("sender_email", ""),
+            "messages": thread.get("messages", []),
+        }
+        for thread in threads
+    ]
+    for attempt in range(2):
+        system_prompt = CLASSIFY_EMAIL_SYSTEM_PROMPT
+        if attempt:
+            system_prompt += "\n" + REPAIR_OUTPUT_PROMPT
+        try:
+            result = await model.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ])
+            batch = EmailAnalysisBatch.model_validate(result)
+            by_id = {item.thread_id: item for item in batch.analyses}
+            if len(by_id) != len(expected_ids) or set(by_id) != set(expected_ids):
+                raise ValueError("Batch output must contain one result for every input thread ID.")
+            return [
+                _enforce_analysis_rules(by_id[thread_id], thread_id)
+                for thread_id in expected_ids
+            ]
+        except Exception:
+            continue
+    return [_review_fallback(thread_id) for thread_id in expected_ids]
 
 
 def _enforce_analysis_rules(analysis: EmailAnalysis, expected_thread_id: str) -> EmailAnalysis:
@@ -118,7 +156,19 @@ async def fetch_threads_node(state: AnalysisState) -> dict[str, Any]:
         "list_gmail_threads",
         {"query": "in:inbox newer_than:30d", "limit": settings.sync_max_threads},
     )
-    return {"raw_threads": rows}
+    semaphore = asyncio.Semaphore(settings.agent_concurrency)
+
+    async def fetch_one(row: dict[str, Any]) -> dict[str, Any]:
+        async with semaphore:
+            try:
+                return await tool_registry.ainvoke(
+                    "get_gmail_thread", {"thread_id": row["thread_id"]}
+                )
+            except Exception:
+                return row
+
+    threads = await asyncio.gather(*(fetch_one(row) for row in rows))
+    return {"raw_threads": threads}
 
 
 async def normalize_threads_node(state: AnalysisState) -> dict[str, Any]:
@@ -126,33 +176,29 @@ async def normalize_threads_node(state: AnalysisState) -> dict[str, Any]:
 
 
 async def classify_threads_node(state: AnalysisState) -> dict[str, Any]:
+    threads = state.get("normalized_threads", [])
     semaphore = asyncio.Semaphore(settings.agent_concurrency)
+    batches = [threads[index:index + 5] for index in range(0, len(threads), 5)]
 
-    async def classify_limited(thread: dict[str, Any]) -> EmailAnalysis:
+    async def classify_limited(batch: list[dict[str, Any]]) -> list[EmailAnalysis]:
         async with semaphore:
-            return await classify_thread(thread)
+            return await _classify_batch(batch)
 
-    analyses = await asyncio.gather(
-        *(classify_limited(thread) for thread in state.get("normalized_threads", [])),
-        return_exceptions=True,
-    )
-    output: list[dict[str, Any]] = []
-    for thread, result in zip(state.get("normalized_threads", []), analyses):
-        if isinstance(result, Exception):
-            output.append(_review_fallback(thread["thread_id"]).model_dump(mode="json"))
-        else:
-            output.append(result.model_dump(mode="json"))
-    return {"analyses": output}
+    results = await asyncio.gather(*(classify_limited(batch) for batch in batches))
+    flattened = [analysis for batch in results for analysis in batch]
+    return {"analyses": [analysis.model_dump(mode="json") for analysis in flattened]}
 
 
 async def validate_analyses_node(state: AnalysisState) -> dict[str, Any]:
     threads = state.get("normalized_threads", [])
     results = state.get("analyses", [])
     validated: list[dict[str, Any]] = []
-    for thread, result in zip(threads, results):
+    for index, thread in enumerate(threads):
         try:
+            if index >= len(results):
+                raise ValueError("Missing model result.")
             analysis = _enforce_analysis_rules(
-                EmailAnalysis.model_validate(result),
+                EmailAnalysis.model_validate(results[index]),
                 thread["thread_id"],
             )
         except Exception:
@@ -169,13 +215,7 @@ async def persist_analyses_node(state: AnalysisState) -> dict[str, Any]:
     analyses = state.get("analyses", [])
     rows: list[dict[str, Any]] = []
     for thread, analysis in zip(threads, analyses):
-        rows.append(
-            {
-                **thread,
-                **analysis,
-                "received_at": thread["received_at"],
-            }
-        )
+        rows.append({**thread, **analysis, "received_at": thread["received_at"]})
     db = state["db"]
     count = upsert_summaries(db, state["user_id"], rows) if rows else 0
     return {"persisted_count": count}
