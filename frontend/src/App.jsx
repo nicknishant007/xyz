@@ -93,8 +93,20 @@ export default function App() {
 
   async function sync() {
     const response = await fetch(`${API}/sync`, { method: "POST", credentials: "include" });
-    const data = await response.json();
-    setNotice(response.ok ? `Sync ${data.status}: ${data.processed} demo conversations` : (data.detail || "Sync failed"));
+    let data = await response.json();
+    if (!response.ok) {
+      setNotice(typeof data.detail === "string" ? data.detail : (data.detail?.message || "Sync failed"));
+      return;
+    }
+    setNotice("Sync queued…");
+    for (let attempt = 0; attempt < 40 && (data.status === "queued" || data.status === "running"); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const statusResponse = await fetch(`${API}/sync/status`, { credentials: "include" });
+      if (statusResponse.ok) data = await statusResponse.json();
+    }
+    setNotice(data.status === "completed"
+      ? `Sync complete: ${data.processed} conversations, ${data.failed} needing review`
+      : data.status === "failed" ? "Sync failed. Check the server logs." : "Sync is still running.");
     await load();
   }
 
