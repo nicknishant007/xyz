@@ -30,6 +30,9 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [syncStatus, setSyncStatus] = useState(null);
+  const [agentInput, setAgentInput] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentResult, setAgentResult] = useState(null);
 
   async function apiFetch(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
@@ -181,6 +184,29 @@ export default function App() {
     }
   }
 
+  async function askAgent(event) {
+    event.preventDefault();
+    const message = agentInput.trim();
+    if (!message || agentBusy) return;
+    setAgentBusy(true);
+    setAgentResult(null);
+    try {
+      const response = await apiFetch("/agent/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Agent request failed.");
+      setAgentResult({ request: message, ...data });
+      setAgentInput("");
+    } catch (err) {
+      setAgentResult({ request: message, reply: err.message || "Agent request failed.", executed_tools: [] });
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
   async function syncMailbox() {
     if (!user) return;
     setActionBusy(true);
@@ -284,6 +310,12 @@ export default function App() {
             <option value="">All priorities</option><option value="high">High priority</option><option value="medium">Medium priority</option><option value="low">Low priority</option>
           </select>
           <button className="sync" onClick={syncMailbox} disabled={actionBusy}>↻ Sync</button>
+        </section>
+
+        <section className="agent-panel">
+          <div className="agent-panel-heading"><div><div className="eyebrow">GEMINI MAIL AGENT</div><p>Ask about your mailbox. It can read conversations and draft replies for Important email; it cannot send or delete mail.</p></div><span className="agent-limit">4 turns · 6 tools</span></div>
+          {agentResult && <div className="agent-answer" role="status"><small>YOU ASKED</small><div className="agent-question">{agentResult.request}</div><small>AGENT RESPONSE</small><p>{agentResult.reply}</p>{agentResult.executed_tools?.length > 0 && <div className="agent-tools-used">Tools: {agentResult.executed_tools.map(item => item.name + " (" + item.status + ")").join(", ")} · {agentResult.llm_calls || 0} Gemini calls</div>}</div>}
+          <form className="agent-query" onSubmit={askAgent}><input value={agentInput} onChange={event => setAgentInput(event.target.value)} maxLength={4000} placeholder='Try: "Summarize thread mock-thread-001"' aria-label="Ask the Gemini mail agent" /><button className="sync" disabled={agentBusy || !agentInput.trim()}>{agentBusy ? "Working…" : "Ask agent"}</button></form>
         </section>
 
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
