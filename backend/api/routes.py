@@ -118,7 +118,7 @@ async def sync_mailbox(
         processed = workflow_result.get("persisted_count", 0)
         run.status = "completed"
         run.processed = processed
-        run.failed = 0
+        run.failed = workflow_result.get("failed_count", 0)
         run.finished_at = datetime.now(timezone.utc)
         db.commit()
         return SyncStatus(
