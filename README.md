@@ -21,16 +21,16 @@ API docs: http://localhost:8000/docs
     Copy-Item .env.example .env
     npm run dev
 
-Open http://localhost:5173. In default mock mode, **Continue with Google** creates a local demo user, stores that user in the configured database, and redirects back to the dashboard. The fake Gmail provider returns sample conversations and creates demo draft IDs. Simulated send requests never contact Gmail.
+Open http://localhost:5173. In default mock mode, **Continue with Google** creates a local demo user, stores that user in the configured database, and redirects back to the dashboard. Use **Sync Gmail** to persist sample conversations. Category edits persist and are retained across subsequent mock syncs. Draft and send actions use local demo IDs; simulated sends never contact Gmail.
 
 ## Configuration
 
-Environment settings live in backend/config/settings.py. SQLite is the default for local development. Set DATABASE_URL to a PostgreSQL URL for a hosted database; the PostgreSQL driver is included. Set MOCK_INTEGRATIONS=false and provide Google OAuth credentials to use the OpenID profile sign-in flow. That flow requests identity scopes only; it does not connect a Gmail mailbox.
+Environment settings live in backend/config/settings.py. SQLite is the default for local development. Set DATABASE_URL to a PostgreSQL URL for a hosted database; the PostgreSQL driver is included. Set MOCK_INTEGRATIONS=false and provide Google OAuth credentials to use the Google OpenID profile sign-in flow. That flow requests identity scopes only; it does not connect a Gmail mailbox.
 
 Do not commit .env or real credentials. Use HTTPS and set COOKIE_SECURE=true when hosting the application.
 
 ## Current scope
 
-Implemented: settings, SQLAlchemy schema and user repository, demo/Google OpenID sign-in, email list/detail mock API, sync/draft/simulated-send routes, and the dashboard.
+Implemented: settings, SQLAlchemy models and user/email repositories, demo/Google OpenID sign-in, signed sessions, authenticated and user-scoped email APIs, database pagination/search/filtering, manual category overrides, sync status persistence, mock draft ownership checks, and the dashboard.
 
-Still needed before real mailbox use: protect email APIs with authenticated-user scoping, store encrypted Google refresh tokens after Gmail consent, add Gmail thread/draft adapters, persist summaries and sync jobs through repositories, add Alembic migrations, and implement Gemini/LangGraph analysis.
+Still needed before real mailbox use: Alembic migrations, encrypted Google refresh-token storage and Gmail consent, Gmail thread/draft adapters, actual background sync and incremental history processing, Gemini/LangGraph analysis, and end-to-end verification.
