@@ -46,7 +46,8 @@ class EmailItem(EmailAnalysis):
     sender_email: str
     subject: str
     received_at: datetime
-    draft_status: str = "none"\n    draft_id: str | None = None
+    draft_status: str = "none"
+    draft_id: str | None = None
 
 
 class EmailPage(BaseModel):
