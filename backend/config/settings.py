@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self):
-        if self.app_env.lower() == "production":
+        if self.app_env.lower() in {"production", "prod"}:
             if self.mock_integrations:
                 raise ValueError("Mock integrations must be disabled in production.")
             if self.session_secret in {
