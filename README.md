@@ -37,7 +37,7 @@ The allowlisted tool registry is in backend/agents/tool_registry.py. Inspect too
 
 The LangGraph workflow fetches threads, normalizes messages, classifies in batches with bounded concurrency, validates the results, and saves per-user summaries. It then creates a draft only when the saved conversation category is Important and the reply decision is reply. The mail service checks ownership and both conditions again. Email text is untrusted input; the classifier never sends mail. Sending remains a user-confirmed UI action, and mock mode simulates it without contacting Gmail.
 
-Mock mode uses deterministic fixture analysis. With mock mode disabled, the classifier is configured for Gemini structured output using GEMINI_API_KEY and GEMINI_MODEL. The live Gmail adapter is not implemented yet.
+The mailbox can stay on fake data with MOCK_INTEGRATIONS=true while Gemini handles classification through LangChain. Set GEMINI_API_KEY and MOCK_AI=false; GEMINI_MODEL defaults to gemini-2.5-flash. Set MOCK_AI=true to force deterministic fixture analysis. Without a Gemini key, local development falls back to fixture analysis. The call is implemented in backend/agents/llm.py and used by backend/agents/nodes.py. The live Gmail adapter is not implemented yet.
 
 ## Configuration
 
