@@ -5,9 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from backend.agents.nodes import _enforce_analysis_rules, classify_thread
-from backend.agents.chat_graph import MAX_AGENT_TURNS, MAX_TOOL_CALLS, route_after_agent, route_after_tools
+from backend.agents.chat_graph import MAX_AGENT_TURNS, MAX_TOOL_CALLS, call_agent_node, execute_tools_node, route_after_agent, route_after_tools
 from backend.agents.llm import invoke_gemini
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from backend.agents.tool_registry import tool_registry
 from backend.schemas.email import EmailAnalysis, ReplyDecision
 from backend.services.mail_service import create_important_reply_draft
@@ -68,6 +68,53 @@ class ChatRoutingTests(unittest.TestCase):
             route_after_agent({"messages": [AIMessage(content="Here is the answer.")]}),
             "finish",
         )
+
+
+    async def test_agent_binds_allowlisted_tools_to_gemini(self):
+        response = AIMessage(content="Found two messages.")
+        model = Mock()
+        bound = Mock()
+        bound.ainvoke = AsyncMock(return_value=response)
+        model.bind_tools.return_value = bound
+        with patch.object(settings, "mock_ai", False), patch.object(
+            settings, "gemini_api_key", "test-key"
+        ), patch("backend.agents.chat_graph.create_gemini_chat_model", return_value=model):
+            result = await call_agent_node(
+                {"messages": [HumanMessage(content="List recent mail.")], "agent_turns": 0}
+            )
+        model.bind_tools.assert_called_once_with(list(tool_registry.get_all()))
+        bound.ainvoke.assert_awaited_once()
+        self.assertEqual(result["llm_calls"], 1)
+
+    async def test_executor_replaces_model_user_id_with_authenticated_user(self):
+        call = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_email_analysis_tool",
+                    "args": {"user_id": "untrusted-user", "thread_id": "thread-1"},
+                    "id": "call-1",
+                }
+            ],
+        )
+        with patch(
+            "backend.agents.chat_graph.tool_registry.ainvoke",
+            new_callable=AsyncMock,
+            return_value={"category": "Important"},
+        ) as invoke:
+            result = await execute_tools_node(
+                {
+                    "messages": [call],
+                    "user_id": "authenticated-user",
+                    "tool_calls_used": 0,
+                    "executed_tools": [],
+                }
+            )
+        invoke.assert_awaited_once_with(
+            "get_email_analysis_tool",
+            {"user_id": "authenticated-user", "thread_id": "thread-1"},
+        )
+        self.assertEqual(result["tool_calls_used"], 1)
 
 
 class GeminiRoutingTests(unittest.IsolatedAsyncioTestCase):
