@@ -84,7 +84,6 @@ async def get_email(
     email_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    csrf_token: str = Depends(require_csrf),
 ):
     row = get_summary(db, user.id, email_id)
     if row is None:
@@ -103,6 +102,7 @@ def update_category(
     payload: CategoryUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
 ):
     row = get_summary(db, user.id, email_id)
     if row is None:
