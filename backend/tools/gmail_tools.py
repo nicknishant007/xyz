@@ -1,6 +1,8 @@
-"""Read-only Gmail tools available to the analysis workflow."""
+"""Allowlisted Gmail tools available to the analysis workflow."""
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
+from backend.database.session import SessionLocal
+from backend.services.mail_service import create_important_reply_draft
 from backend.services.integration_service import integration_service
 
 
@@ -14,6 +16,12 @@ class ListThreadsInput(BaseModel):
 
 class GetThreadInput(BaseModel):
     thread_id: str = Field(description="ID of the Gmail conversation to retrieve.")
+
+
+class CreateImportantReplyDraftInput(BaseModel):
+    user_id: str = Field(description="Authenticated user's internal ID, supplied by the workflow.")
+    thread_id: str = Field(description="ID of the conversation to reply to.")
+    body: str = Field(min_length=1, max_length=20000, description="Reply text to save as a draft.")
 
 
 @tool(args_schema=ListThreadsInput)
@@ -47,4 +55,25 @@ async def get_gmail_profile() -> dict:
     return await integration_service.get_profile()
 
 
-READ_ONLY_GMAIL_TOOLS = (list_gmail_threads, get_gmail_thread, get_gmail_profile)
+@tool(args_schema=CreateImportantReplyDraftInput, metadata={"side_effects": "creates_draft"})
+async def create_important_reply_draft_tool(user_id: str, thread_id: str, body: str) -> dict:
+    """Create a reply draft only when the saved conversation category is Important.
+
+    The backend verifies user ownership, category, and reply decision. This tool
+    creates a draft but never sends a message.
+    """
+    db = SessionLocal()
+    try:
+        return await create_important_reply_draft(
+            db, user_id, thread_id, body, reuse_existing=True
+        )
+    finally:
+        db.close()
+
+
+GMAIL_TOOLS = (
+    list_gmail_threads,
+    get_gmail_thread,
+    get_gmail_profile,
+    create_important_reply_draft_tool,
+)
