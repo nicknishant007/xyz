@@ -82,9 +82,18 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
     op.create_index("ix_sync_runs_user_id", "sync_runs", ["user_id"])
+    op.create_index(
+        "uq_sync_runs_one_active_per_user",
+        "sync_runs",
+        ["user_id"],
+        unique=True,
+        postgresql_where=sa.text("status IN ('queued', 'running')"),
+        sqlite_where=sa.text("status IN ('queued', 'running')"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_sync_runs_one_active_per_user", table_name="sync_runs")
     op.drop_index("ix_sync_runs_user_id", table_name="sync_runs")
     op.drop_table("sync_runs")
     op.drop_index("ix_email_summaries_received_at", table_name="email_summaries")
