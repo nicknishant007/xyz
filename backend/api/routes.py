@@ -128,10 +128,13 @@ async def sync_mailbox(
             last_successful_sync=run.finished_at,
         )
     except Exception as exc:
-        run.status = "failed"
-        run.error_message = str(exc)[:1000]
-        run.finished_at = datetime.now(timezone.utc)
-        db.commit()
+        db.rollback()
+        run = db.get(SyncRun, run.id)
+        if run is not None:
+            run.status = "failed"
+            run.error_message = str(exc)[:1000]
+            run.finished_at = datetime.now(timezone.utc)
+            db.commit()
         raise HTTPException(status_code=502, detail="Mailbox sync failed.") from exc
 
 
