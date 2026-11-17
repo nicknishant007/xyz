@@ -1,6 +1,6 @@
 """Central environment-backed configuration and external service URLs."""
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,24 @@ class Settings(BaseSettings):
     session_secret: str = "development-only-change-me"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        if self.app_env.lower() == "production":
+            if self.mock_integrations:
+                raise ValueError("Mock integrations must be disabled in production.")
+            if self.session_secret in {
+                "development-only-change-me",
+                "change-this-development-secret",
+            } or len(self.session_secret) < 32:
+                raise ValueError("Production requires a unique SESSION_SECRET of at least 32 characters.")
+            if not self.cookie_secure:
+                raise ValueError("COOKIE_SECURE must be true in production.")
+            if not self.google_client_id or not self.google_client_secret:
+                raise ValueError("Google OAuth credentials are required in production.")
+            if not self.frontend_url.startswith("https://") or not self.google_redirect_uri.startswith("https://"):
+                raise ValueError("Production frontend and OAuth redirect URLs must use HTTPS.")
+        return self
 
 
 @lru_cache
