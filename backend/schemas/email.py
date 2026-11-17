@@ -50,6 +50,19 @@ class EmailItem(EmailAnalysis):
     draft_id: str | None = None
 
 
+class EmailMessage(BaseModel):
+    message_id: str
+    sender_name: str
+    sender_email: str
+    timestamp: datetime
+    body_text: str
+    is_user: bool = False
+
+
+class EmailDetail(EmailItem):
+    messages: list[EmailMessage] = Field(default_factory=list)
+
+
 class EmailPage(BaseModel):
     items: list[EmailItem]
     pagination: dict[str, int]
