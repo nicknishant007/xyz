@@ -267,7 +267,7 @@ export default function App() {
         <div className="brand-icon">M</div><h2>Sign in to manage your mail</h2>
         <p>Connect with Google to view, classify, and draft replies for your conversations.</p>
         <button className="compose" onClick={() => { window.location.href = ROOT + "/auth/google/start"; }}>Continue with Google</button>
-        <small>Mock mode uses sample conversations. It does not access Gmail or send messages.</small>
+        <small>This demo uses sample conversations. It does not connect to Gmail or send real messages.</small>
       </section> : <>
         <section className="stats">
           <div className="stat"><span>CONVERSATIONS</span><b>{pagination.total}</b><small>matching filters</small></div>
