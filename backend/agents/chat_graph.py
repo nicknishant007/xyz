@@ -100,8 +100,8 @@ async def execute_tools_node(state: ChatAgentState) -> dict[str, Any]:
             continue
 
         used += 1
-        if name == "create_important_reply_draft_tool":
-            # Do not trust a model-supplied identity; always use the authenticated session.
+        if name in {"get_email_analysis_tool", "create_important_reply_draft_tool"}:
+            # Do not trust a model-supplied identity; use the authenticated session.
             args["user_id"] = state["user_id"]
 
         if name == "list_gmail_threads":
