@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
 from backend.agents.tool_registry import tool_registry
@@ -120,7 +121,20 @@ def sync_mailbox(
         )
     run = SyncRun(id=uuid4().hex, user_id=user.id, status="queued")
     db.add(run)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        running = db.scalar(
+            select(SyncRun).where(
+                SyncRun.user_id == user.id,
+                SyncRun.status.in_(("queued", "running")),
+            )
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "A mailbox sync is already running.", "job_id": running.id if running else None},
+        ) from exc
     background_tasks.add_task(execute_sync_job, user.id, run.id)
     return SyncStatus(
         job_id=run.id,
