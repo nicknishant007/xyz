@@ -10,6 +10,7 @@ Requires Python 3.11+.
     .venv\Scripts\activate
     pip install -r requirements.txt
     Copy-Item .env.example .env
+    alembic upgrade head
     uvicorn backend.main:app --reload
 
 API docs: http://localhost:8000/docs
@@ -37,4 +38,4 @@ Do not commit .env or real credentials. Use HTTPS and set COOKIE_SECURE=true whe
 
 ## Remaining work
 
-Alembic migrations, encrypted Gmail refresh-token storage, live Gmail thread/draft adapters, asynchronous background sync, and end-to-end verification are still required before using a real mailbox.
+Encrypted Gmail refresh-token storage, live Gmail thread/draft adapters, a persistent external worker, and end-to-end verification are still required before using a real mailbox. The initial Alembic migration and FastAPI background sync are now in place.
