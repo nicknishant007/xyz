@@ -8,7 +8,7 @@ from backend.agents.schemas import EmailAnalysisBatch
 from backend.agents.state import AnalysisState
 from backend.agents.tool_registry import tool_registry
 from backend.config.settings import settings
-from backend.repositories.email_repository import upsert_summaries
+from backend.repositories.email_repository import get_summary, upsert_summaries
 from backend.schemas.email import EmailAnalysis, ReplyDecision
 
 
@@ -184,6 +184,14 @@ def _enforce_analysis_rules(
                 "suggested_reply": None,
             }
         )
+    if analysis.reply_decision.value == "reply" and analysis.category.value != "Important":
+        return analysis.model_copy(
+            update={
+                "reply_decision": ReplyDecision.review,
+                "reply_reason": "Replies are allowed only for the Important category.",
+                "suggested_reply": None,
+            }
+        )
     if analysis.reply_decision.value == "reply" and not (analysis.suggested_reply or "").strip():
         raise ValueError("A reply decision requires a non-empty suggested reply.")
     if analysis.reply_decision.value != "reply" and analysis.suggested_reply:
@@ -279,3 +287,30 @@ async def persist_analyses_node(state: AnalysisState) -> dict[str, Any]:
     db = state["db"]
     count = upsert_summaries(db, state["user_id"], rows) if rows else 0
     return {"persisted_count": count}
+
+async def create_important_reply_drafts_node(state: AnalysisState) -> dict[str, Any]:
+    """Create drafts only for persisted Important conversations approved for reply."""
+    db = state["db"]
+    user_id = state["user_id"]
+    analyses = state.get("analyses", [])
+    created = 0
+    failed = 0
+    for analysis in analyses:
+        if analysis.get("reply_decision") != "reply" or not analysis.get("suggested_reply"):
+            continue
+        row = get_summary(db, user_id, analysis["thread_id"])
+        if row is None or row.category != "Important" or row.reply_decision != "reply":
+            continue
+        try:
+            result = await tool_registry.ainvoke(
+                "create_important_reply_draft_tool",
+                {
+                    "user_id": user_id,
+                    "thread_id": row.thread_id,
+                    "body": analysis["suggested_reply"],
+                },
+            )
+            created += int(bool(result.get("created")))
+        except Exception:
+            failed += 1
+    return {"draft_created_count": created, "draft_failed_count": failed}
