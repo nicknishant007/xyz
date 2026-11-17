@@ -136,6 +136,7 @@ class ReplyGateTests(unittest.TestCase):
             {
                 "list_gmail_threads",
                 "get_gmail_thread",
+                "get_email_analysis_tool",
                 "get_gmail_profile",
                 "create_important_reply_draft_tool",
             },
