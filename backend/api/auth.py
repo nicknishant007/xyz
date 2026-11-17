@@ -2,8 +2,10 @@
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.config.settings import settings
+from backend.database.models import User
 from backend.database.session import get_db
 from backend.repositories.user_repository import get_or_create_google_user
 
@@ -28,20 +30,15 @@ async def google_start(request: Request):
         )
     if not settings.google_client_id or not settings.google_client_secret:
         raise HTTPException(status_code=503, detail="Google OAuth credentials are not configured.")
-    redirect_uri = settings.google_redirect_uri
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    return await oauth.google.authorize_redirect(request, settings.google_redirect_uri)
 
 
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, db: Session = Depends(get_db)):
-    expected_state = request.session.pop("oauth_state", None)
-    if not expected_state or request.query_params.get("state") != expected_state:
-        if not settings.mock_integrations:
-            raise HTTPException(status_code=400, detail="Invalid OAuth state.")
-        if request.query_params.get("state") != "local-demo-state":
-            raise HTTPException(status_code=400, detail="Invalid demo OAuth state.")
-
     if settings.mock_integrations:
+        expected_state = request.session.pop("oauth_state", None)
+        if not expected_state or request.query_params.get("state") != expected_state:
+            raise HTTPException(status_code=400, detail="Invalid demo OAuth state.")
         identity = {
             "sub": "local-demo-user",
             "email": "demo@example.test",
@@ -73,8 +70,6 @@ async def current_user(request: Request, db: Session = Depends(get_db)):
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in required.")
-    from sqlalchemy import select
-    from backend.database.models import User
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None:
         request.session.clear()
