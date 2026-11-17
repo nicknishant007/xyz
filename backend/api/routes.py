@@ -15,6 +15,7 @@ from backend.repositories.email_repository import (
     list_summaries,
     set_category,
 )
+from backend.services.integration_service import integration_service
 from backend.schemas.email import (
     CategoryUpdate,
     DraftRequest,
@@ -109,7 +110,7 @@ def sync_mailbox(
     running = db.scalar(
         select(SyncRun).where(
             SyncRun.user_id == user.id,
-            SyncRun.status.in_(( "queued", "running" )),
+            SyncRun.status.in_(("queued", "running")),
         )
     )
     if running is not None:
