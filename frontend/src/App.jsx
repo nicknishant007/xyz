@@ -202,7 +202,12 @@ export default function App() {
       if (state.status === "completed") setNotice("Sync finished: " + state.processed + " processed, " + state.failed + " failed.");
       else if (state.status === "failed") setError("Sync failed. Review backend status and logs.");
       else setNotice("Sync is still running. Status will remain available here.");
-      const refresh = await apiFetch("/emails?" + new URLSearchParams({ page: String(page), page_size: "20" }).toString());
+      const refreshQuery = new URLSearchParams({ page: String(page), page_size: "20" });
+      if (category !== "All Emails") refreshQuery.set("category", category);
+      if (replyDecision) refreshQuery.set("reply_decision", replyDecision);
+      if (priority) refreshQuery.set("priority", priority);
+      if (search.trim()) refreshQuery.set("search", search.trim());
+      const refresh = await apiFetch("/emails?" + refreshQuery.toString());
       if (refresh.ok) {
         const data = await refresh.json();
         setEmails(data.items);
@@ -217,12 +222,19 @@ export default function App() {
 
   async function signOut() {
     try {
-      await apiFetch(ROOT.replace(API, "") + "/auth/logout", { method: "POST" });
-    } finally {
+      const response = await fetch(ROOT + "/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-CSRF-Token": csrfToken },
+      });
+      if (!response.ok) throw new Error("Could not sign out.");
       setUser(null);
       setCsrfToken("");
       setSelected(null);
       setNotice("");
+      setError("");
+    } catch (err) {
+      setError(err.message || "Could not sign out.");
     }
   }
 
