@@ -60,7 +60,7 @@ export default function App() {
     if (!draftId) return;
     if (!window.confirm("Simulate sending this draft? No real email will be sent.")) return;
     const query = new URLSearchParams({ draft_id: draftId, confirmed: "true" });
-    const response = await fetch(`${API}/emails/${selected.id}/send?${query}`, { method: "POST" });
+    const response = await fetch(`${API}/emails/${selected.id}/send?${query}`, { method: "POST", credentials: "include" });
     const data = await response.json();
     setNotice(response.ok ? "Demo send completed. No email was sent." : (data.detail || "Send failed"));
   }
