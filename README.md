@@ -26,16 +26,17 @@ Open http://localhost:5173. In default mock mode, **Continue with Google** creat
 
 ## Agent workflow
 
-The allowlisted tool registry is in backend/agents/tool_registry.py. Inspect tool names, descriptions, input schemas, and side-effect classes at GET /api/agent/tools after sign-in.
+The allowlisted tool registry is in backend/agents/tool_registry.py. Inspect tool names, descriptions, input schemas, and side-effect classes at GET /api/agent/tools after sign-in. Send natural-language requests to POST /api/agent/chat with a JSON message and the signed-in session's CSRF token.
 
 | Tool | Side effect |
 | --- | --- |
 | list_gmail_threads | Read mailbox thread metadata |
 | get_gmail_thread | Read one conversation |
+| get_email_analysis_tool | Read the signed-in user's saved category and reply decision |
 | get_gmail_profile | Read mock mailbox profile |
 | create_important_reply_draft_tool | Create a draft only |
 
-The LangGraph workflow fetches threads, normalizes messages, classifies in batches with bounded concurrency, validates the results, and saves per-user summaries. It then creates a draft only when the saved conversation category is Important and the reply decision is reply. The mail service checks ownership and both conditions again. Email text is untrusted input; the classifier never sends mail. Sending remains a user-confirmed UI action, and mock mode simulates it without contacting Gmail.
+There are two LangGraph flows. The mailbox sync graph fetches threads, normalizes messages, classifies in batches, validates results, persists per-user summaries, then drafts only eligible Important replies. The conversational graph binds Gemini to the allowlisted tools, routes model tool calls to an executor, and loops back to Gemini for a final answer. It exits immediately when Gemini returns a normal answer, and stops safely on its request limits. Each request allows at most 4 Gemini turns, 6 tool calls, and one retry per Gemini or tool call. Tool output is capped at 12000 characters; list requests are capped at 25 rows. The executor injects the authenticated user ID, and the mail service checks ownership, category, and reply decision again. Email text is untrusted input. There is no send tool; sending remains a user-confirmed UI action and mock mode simulates it without contacting Gmail.
 
 The mailbox can stay on fake data with MOCK_INTEGRATIONS=true while Gemini handles classification through LangChain. Set GEMINI_API_KEY and MOCK_AI=false; GEMINI_MODEL defaults to gemini-2.5-flash. Set MOCK_AI=true to force deterministic fixture analysis. Without a Gemini key, local development falls back to fixture analysis. The call is implemented in backend/agents/llm.py and used by backend/agents/nodes.py. The live Gmail adapter is not implemented yet.
 
