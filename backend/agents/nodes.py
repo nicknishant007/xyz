@@ -2,7 +2,7 @@
 import asyncio
 import json
 from typing import Any
-from langchain_core.messages import HumanMessage, SystemMessage
+from backend.agents.llm import invoke_gemini
 from backend.agents.prompts import CLASSIFY_EMAIL_SYSTEM_PROMPT, REPAIR_OUTPUT_PROMPT
 from backend.agents.schemas import EmailAnalysisBatch
 from backend.agents.state import AnalysisState
@@ -51,24 +51,10 @@ def _mock_analysis(thread: dict[str, Any]) -> EmailAnalysis:
     )
 
 
-def _get_structured_model(schema):
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    if not settings.gemini_api_key:
-        raise RuntimeError("GEMINI_API_KEY is required when mock integrations are disabled.")
-    model = ChatGoogleGenerativeAI(
-        model=settings.gemini_model,
-        google_api_key=settings.gemini_api_key,
-        temperature=0,
-    )
-    return model.with_structured_output(schema, method="json_schema")
-
-
 async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> EmailAnalysis:
-    if settings.mock_integrations:
+    if settings.mock_ai or not settings.gemini_api_key:
         return _mock_analysis(thread)
 
-    model = _get_structured_model(EmailAnalysis)
     system_prompt = CLASSIFY_EMAIL_SYSTEM_PROMPT
     if repair:
         system_prompt += "\n" + REPAIR_OUTPUT_PROMPT
@@ -79,10 +65,7 @@ async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> Em
         "messages": thread.get("messages", []),
     }
     try:
-        result = await model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
+        result = await invoke_gemini(EmailAnalysis, system_prompt, payload)
         analysis = EmailAnalysis.model_validate(result)
         return _enforce_analysis_rules(
             analysis,
@@ -96,11 +79,10 @@ async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> Em
 
 
 async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
-    if settings.mock_integrations:
+    if settings.mock_ai or not settings.gemini_api_key:
         return [_mock_analysis(thread) for thread in threads]
 
     try:
-        model = _get_structured_model(EmailAnalysisBatch)
     except Exception:
         return [_review_fallback(thread["thread_id"]) for thread in threads]
     expected_ids = [thread["thread_id"] for thread in threads]
@@ -114,10 +96,7 @@ async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
         for thread in threads
     ]
     try:
-        result = await model.ainvoke([
-            SystemMessage(content=CLASSIFY_EMAIL_SYSTEM_PROMPT),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
+        result = await invoke_gemini(EmailAnalysisBatch, CLASSIFY_EMAIL_SYSTEM_PROMPT, payload)
         batch = EmailAnalysisBatch.model_validate(result)
     except Exception:
         return await _retry_batch_individually(threads)
