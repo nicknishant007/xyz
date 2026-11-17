@@ -5,6 +5,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from backend.agents.nodes import _enforce_analysis_rules, classify_thread
+from backend.agents.chat_graph import MAX_AGENT_TURNS, MAX_TOOL_CALLS, route_after_agent, route_after_tools
+from backend.agents.llm import invoke_gemini
+from langchain_core.messages import AIMessage
 from backend.agents.tool_registry import tool_registry
 from backend.schemas.email import EmailAnalysis, ReplyDecision
 from backend.services.mail_service import create_important_reply_draft
@@ -21,6 +24,50 @@ def analysis(category: str, decision: str = "reply") -> EmailAnalysis:
         reply_reason="A response was requested.",
         suggested_reply="Thanks, I will review this.",
     )
+
+
+class ChatRoutingTests(unittest.TestCase):
+    def test_agent_routes_tool_calls_to_executor(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "get_gmail_profile", "args": {}, "id": "call-1"}
+                    ],
+                )
+            ],
+            "agent_turns": 1,
+            "tool_calls_used": 0,
+        }
+        self.assertEqual(route_after_agent(state), "execute_tools")
+
+    def test_agent_stops_at_turn_or_tool_call_budget(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "get_gmail_profile", "args": {}, "id": "call-1"}
+                    ],
+                )
+            ],
+            "agent_turns": MAX_AGENT_TURNS,
+            "tool_calls_used": 0,
+        }
+        self.assertEqual(route_after_agent(state), "limit")
+        self.assertEqual(
+            route_after_tools(
+                {"agent_turns": 1, "tool_calls_used": MAX_TOOL_CALLS}
+            ),
+            "limit",
+        )
+
+    def test_agent_finishes_without_tool_call(self):
+        self.assertEqual(
+            route_after_agent({"messages": [AIMessage(content="Here is the answer.")]}),
+            "finish",
+        )
 
 
 class GeminiRoutingTests(unittest.IsolatedAsyncioTestCase):
@@ -43,6 +90,25 @@ class GeminiRoutingTests(unittest.IsolatedAsyncioTestCase):
                 )
         invoke.assert_awaited_once()
         self.assertEqual(result.reply_decision, ReplyDecision.reply)
+
+
+    async def test_langchain_invokes_structured_gemini_model(self):
+        expected = analysis("Important")
+        structured = Mock()
+        structured.ainvoke = AsyncMock(return_value=expected)
+        chat = Mock()
+        chat.with_structured_output.return_value = structured
+        with patch.object(settings, "gemini_api_key", "test-key"):
+            with patch("backend.agents.llm.ChatGoogleGenerativeAI", return_value=chat) as constructor:
+                result = await invoke_gemini(
+                    EmailAnalysis, "System rules", {"thread_id": "thread-1"}
+                )
+        constructor.assert_called_once()
+        chat.with_structured_output.assert_called_once_with(
+            EmailAnalysis, method="json_schema"
+        )
+        structured.ainvoke.assert_awaited_once()
+        self.assertEqual(result.thread_id, "thread-1")
 
 
 class ReplyGateTests(unittest.TestCase):
