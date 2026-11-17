@@ -31,7 +31,11 @@ class ToolRegistry:
                 name=tool.name,
                 description=tool.description,
                 input_schema=tool.args_schema.model_json_schema(),
-                side_effects=(tool.metadata or {}).get("side_effects", "read_only"),
+                side_effects=(
+                    "creates_draft"
+                    if tool.name == "create_important_reply_draft_tool"
+                    else "read_only"
+                ),
             )
             for tool in self._tools.values()
         ]
