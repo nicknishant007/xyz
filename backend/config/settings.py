@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
 
     mock_integrations: bool = True
+    mock_ai: bool = False
     mock_gmail_api_url: str = "http://localhost:8000/mock/gmail"
     mock_ai_api_url: str = "http://localhost:8000/mock/ai"
     google_api_base_url: str = "https://gmail.googleapis.com/gmail/v1"
