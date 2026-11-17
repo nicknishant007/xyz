@@ -14,7 +14,6 @@ from backend.repositories.email_repository import (
     get_summary,
     list_summaries,
     set_category,
-    upsert_summaries,
 )
 from backend.schemas.email import (
     CategoryUpdate,
@@ -24,7 +23,6 @@ from backend.schemas.email import (
     SendRequest,
     SyncStatus,
 )
-from backend.services.integration_service import integration_service
 
 router = APIRouter()
 
