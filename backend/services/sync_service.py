@@ -17,23 +17,22 @@ async def execute_sync_job(user_id: str, job_id: str) -> None:
             return
         run.status = "running"
         db.commit()
-        try:
-            result = await run_analysis_workflow(user_id, db)
-            run = db.get(SyncRun, job_id)
-            if run is None:
-                return
+
+        result = await run_analysis_workflow(user_id, db)
+        run = db.get(SyncRun, job_id)
+        if run is not None:
             run.status = "completed"
             run.processed = result.get("persisted_count", 0)
             run.failed = result.get("failed_count", 0)
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
-        except Exception as exc:
-            db.rollback()
-            run = db.get(SyncRun, job_id)
-            if run is not None:
-                run.status = "failed"
-                run.error_message = str(exc)[:1000]
-                run.finished_at = datetime.now(timezone.utc)
-                db.commit()
+    except Exception as exc:
+        db.rollback()
+        run = db.get(SyncRun, job_id)
+        if run is not None:
+            run.status = "failed"
+            run.error_message = str(exc)[:1000]
+            run.finished_at = datetime.now(timezone.utc)
+            db.commit()
     finally:
         db.close()
