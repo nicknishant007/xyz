@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 from backend.database.session import SessionLocal
 from backend.services.mail_service import create_important_reply_draft
+from backend.repositories.email_repository import get_summary
 from backend.services.integration_service import integration_service
 
 
@@ -16,6 +17,11 @@ class ListThreadsInput(BaseModel):
 
 class GetThreadInput(BaseModel):
     thread_id: str = Field(description="ID of the Gmail conversation to retrieve.")
+
+
+class GetEmailAnalysisInput(BaseModel):
+    user_id: str | None = Field(default=None, description="Injected by the graph from the authenticated session.")
+    thread_id: str = Field(description="ID of the user's saved conversation.")
 
 
 class CreateImportantReplyDraftInput(BaseModel):
@@ -46,6 +52,30 @@ async def get_gmail_thread(thread_id: str) -> dict:
 
 
 
+@tool(args_schema=GetEmailAnalysisInput)
+async def get_email_analysis_tool(user_id: str | None = None, thread_id: str = "") -> dict:
+    """Read the saved category, reply decision, and AI analysis for a conversation."""
+    db = SessionLocal()
+    try:
+        row = get_summary(db, user_id or "", thread_id)
+        if row is None:
+            raise LookupError("Saved conversation not found.")
+        return {
+            "thread_id": row.thread_id,
+            "subject": row.subject,
+            "sender_name": row.sender_name,
+            "sender_email": row.sender_email,
+            "category": row.category,
+            "reply_decision": row.reply_decision,
+            "reply_reason": row.reply_reason,
+            "summary": row.summary,
+            "suggested_reply": row.suggested_reply,
+            "draft_status": row.draft_status,
+        }
+    finally:
+        db.close()
+
+
 @tool
 async def get_gmail_profile() -> dict:
     """Return the connected mailbox address and message/thread counts.
@@ -74,6 +104,7 @@ async def create_important_reply_draft_tool(user_id: str | None = None, thread_i
 GMAIL_TOOLS = (
     list_gmail_threads,
     get_gmail_thread,
+    get_email_analysis_tool,
     get_gmail_profile,
     create_important_reply_draft_tool,
 )
