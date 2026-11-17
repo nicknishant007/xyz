@@ -14,10 +14,10 @@
 
 ## Next phases
 
-1. Add Alembic migrations for the current schema.
+1. Replace FastAPI in-process background tasks with a persistent worker when deploying at scale.
 2. Implement Gmail consent and encrypted refresh-token storage before enabling mailbox access.
 3. Implement live Gmail retrieval, MIME normalization, Gmail drafts, and incremental history sync.
-4. Move sync into a durable, deduplicated background job and improve partial-failure accounting.
+4. Improve partial-failure accounting and move sync jobs to a persistent worker for restart-safe execution.
 5. Complete frontend priority/reply filters, full thread rendering, and production approval flow.
 6. Add integration tests for tool allowlisting, untrusted email handling, validation retries, persistence, and user isolation.
 
