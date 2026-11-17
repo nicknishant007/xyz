@@ -239,7 +239,9 @@ async def classify_threads_node(state: AnalysisState) -> dict[str, Any]:
 
     results = await asyncio.gather(*(classify_limited(batch) for batch in batches))
     flattened = [analysis for batch in results for analysis in batch]
-    return {"analyses": [analysis.model_dump(mode="json") for analysis in flattened]}
+    serialized = [analysis.model_dump(mode="json") for analysis in flattened]
+    failed = sum(analysis.summary.startswith("Automated analysis failed") for analysis in flattened)
+    return {"analyses": serialized, "failed_count": failed}
 
 
 async def validate_analyses_node(state: AnalysisState) -> dict[str, Any]:
@@ -261,7 +263,11 @@ async def validate_analyses_node(state: AnalysisState) -> dict[str, Any]:
             except Exception:
                 analysis = _review_fallback(thread["thread_id"])
         validated.append(analysis.model_dump(mode="json"))
-    return {"analyses": validated}
+    failed = sum(
+        analysis["summary"].startswith("Automated analysis failed")
+        for analysis in validated
+    )
+    return {"analyses": validated, "failed_count": failed}
 
 
 async def persist_analyses_node(state: AnalysisState) -> dict[str, Any]:
