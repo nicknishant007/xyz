@@ -22,8 +22,6 @@ def upgrade() -> None:
         sa.Column("profile_picture", sa.String(length=2048), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.UniqueConstraint("google_sub", name="uq_users_google_sub"),
-        sa.UniqueConstraint("email", name="uq_users_email"),
     )
     op.create_index("ix_users_google_sub", "users", ["google_sub"], unique=True)
     op.create_index("ix_users_email", "users", ["email"], unique=True)
@@ -39,7 +37,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint("user_id", name="uq_gmail_connections_user_id"),
     )
     op.create_index("ix_gmail_connections_user_id", "gmail_connections", ["user_id"], unique=True)
 
