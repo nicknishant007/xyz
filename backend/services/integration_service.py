@@ -28,7 +28,7 @@ class IntegrationService:
                 "subject": "Project proposal review",
                 "received_at": now.isoformat(),
                 "summary": "Alex asks you to review the project proposal before Friday.",
-                "category": "Work",
+                "category": "Important",
                 "priority": "medium",
                 "reply_decision": "reply",
                 "reply_reason": "The sender requested feedback by Friday.",
