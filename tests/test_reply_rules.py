@@ -4,10 +4,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from backend.agents.nodes import _enforce_analysis_rules
+from backend.agents.nodes import _enforce_analysis_rules, classify_thread
 from backend.agents.tool_registry import tool_registry
 from backend.schemas.email import EmailAnalysis, ReplyDecision
 from backend.services.mail_service import create_important_reply_draft
+from backend.config.settings import settings
 
 
 def analysis(category: str, decision: str = "reply") -> EmailAnalysis:
@@ -20,6 +21,28 @@ def analysis(category: str, decision: str = "reply") -> EmailAnalysis:
         reply_reason="A response was requested.",
         suggested_reply="Thanks, I will review this.",
     )
+
+
+class GeminiRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gemini_is_used_with_mock_gmail_when_configured(self):
+        with patch.object(settings, "mock_integrations", True), patch.object(
+            settings, "mock_ai", False
+        ), patch.object(settings, "gemini_api_key", "test-key"):
+            with patch(
+                "backend.agents.nodes.invoke_gemini",
+                new_callable=AsyncMock,
+                return_value=analysis("Important"),
+            ) as invoke:
+                result = await classify_thread(
+                    {
+                        "thread_id": "thread-1",
+                        "subject": "Please review",
+                        "sender_email": "sender@example.test",
+                        "messages": [],
+                    }
+                )
+        invoke.assert_awaited_once()
+        self.assertEqual(result.reply_decision, ReplyDecision.reply)
 
 
 class ReplyGateTests(unittest.TestCase):
