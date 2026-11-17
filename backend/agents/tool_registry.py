@@ -19,6 +19,10 @@ class ToolRegistry:
     def __init__(self, tools: tuple[BaseTool, ...]) -> None:
         self._tools = {tool.name: tool for tool in tools}
 
+    def get_all(self) -> tuple[BaseTool, ...]:
+        """Return only tools registered on the explicit allowlist."""
+        return tuple(self._tools.values())
+
     def get(self, name: str) -> BaseTool:
         try:
             return self._tools[name]
