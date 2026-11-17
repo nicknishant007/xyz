@@ -139,7 +139,7 @@ export default function App() {
   }
 
   async function createDraft() {
-    if (!selected || !replyBody.trim()) return;
+    if (!selected || selected.category !== "Important" || selected.reply_decision !== "reply" || !replyBody.trim()) return;
     setActionBusy(true);
     try {
       const response = await apiFetch("/emails/" + encodeURIComponent(selected.thread_id) + "/draft", {
@@ -160,7 +160,7 @@ export default function App() {
   }
 
   async function sendDraft() {
-    if (!selected?.draft_id || selected.draft_status !== "draft") return;
+    if (!selected?.draft_id || selected.category !== "Important" || selected.reply_decision !== "reply" || selected.draft_status !== "draft") return;
     if (!window.confirm("Confirm this draft action? In mock mode, no email is sent.")) return;
     setActionBusy(true);
     try {
@@ -323,10 +323,11 @@ export default function App() {
               <div className="message-body">{message.body_text}</div>
             </article>) : <p className="muted">No original message content was returned.</p>}
           </div>
-          {selected.reply_decision === "reply" && <div className="detail-block"><label className="eyebrow" htmlFor="reply-body">SUGGESTED REPLY</label><textarea id="reply-body" value={replyBody} disabled={actionBusy} onChange={event => setReplyBody(event.target.value)} /></div>}
+          {selected.reply_decision === "reply" && selected.category === "Important" && <div className="detail-block"><label className="eyebrow" htmlFor="reply-body">SUGGESTED REPLY</label><textarea id="reply-body" value={replyBody} disabled={actionBusy} onChange={event => setReplyBody(event.target.value)} /></div>}
+          {selected.reply_decision === "reply" && selected.category !== "Important" && <div className="detail-block muted">Replies are available only for conversations in the Important category.</div>}
           <div className="detail-actions">
-            {selected.reply_decision === "reply" && selected.draft_status !== "sent" && <button className="sync" onClick={createDraft} disabled={actionBusy || !replyBody.trim()}>{selected.draft_status === "draft" ? "Update demo draft" : "Create demo draft"}</button>}
-            {selected.draft_status === "draft" && <button className="send" onClick={sendDraft} disabled={actionBusy}>Review & simulate send</button>}
+            {selected.reply_decision === "reply" && selected.category === "Important" && selected.draft_status !== "sent" && <button className="sync" onClick={createDraft} disabled={actionBusy || !replyBody.trim()}>{selected.draft_status === "draft" ? "Update demo draft" : "Create demo draft"}</button>}
+            {selected.category === "Important" && selected.reply_decision === "reply" && selected.draft_status === "draft" && <button className="send" onClick={sendDraft} disabled={actionBusy}>Review & simulate send</button>}
             {selected.draft_status === "sent" && <span className="muted">Demo send completed</span>}
           </div>
           <small className="disclaimer">Mock mode only. This demo cannot access Gmail or send real mail.</small>
