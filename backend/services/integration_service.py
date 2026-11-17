@@ -5,6 +5,17 @@ from backend.config.settings import settings
 
 
 class IntegrationService:
+    async def get_profile(self) -> dict:
+        """Return safe mock metadata for the connected mailbox."""
+        if not settings.mock_integrations:
+            raise RuntimeError("Live Gmail adapter is not implemented; enable mock mode.")
+        return {
+            "email_address": "demo@example.test",
+            "messages_total": 3,
+            "threads_total": 2,
+            "history_id": "mock-history-001",
+        }
+
     async def list_threads(self, query: str = "in:inbox newer_than:30d") -> list[dict]:
         if not settings.mock_integrations:
             raise RuntimeError("Live Gmail adapter is not implemented; enable mock mode.")
