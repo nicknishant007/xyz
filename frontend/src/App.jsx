@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const ROOT = API.endsWith("/api") ? API.slice(0, -4) : API;
 const categories = ["All Emails", "Work", "Personal", "Finance", "Receipts", "Travel", "Promotions", "Social", "Updates", "Other"];
 
 export default function App() {
@@ -12,7 +13,15 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [reply, setReply] = useState("");
   const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);\n  const [user, setUser] = useState(null);\n\n  useEffect(() => {\n    fetch(API.replace(/\\/api$/, \"\") + \"/api/me\", { credentials: \"include\" })\n      .then(response => response.ok ? response.json() : null)\n      .then(setUser)\n      .catch(() => setUser(null));\n  }, []);
+  const [busy, setBusy] = useState(false);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    fetch(ROOT + "/api/me", { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
 
   async function load() {
     setBusy(true);
@@ -20,7 +29,7 @@ export default function App() {
       const query = new URLSearchParams({ page, page_size: 20 });
       if (category !== "All Emails") query.set("category", category);
       if (search) query.set("search", search);
-      const response = await fetch(`${API}/emails?${query}`, { credentials: \"include\" });
+      const response = await fetch(`${API}/emails?${query}`, { credentials: "include" });
       if (!response.ok) throw new Error("Could not load conversations");
       const data = await response.json();
       setEmails(data.items);
@@ -40,7 +49,7 @@ export default function App() {
   async function createDraft() {
     if (!selected || !reply.trim()) return;
     const query = new URLSearchParams({ body: reply });
-    const response = await fetch(`${API}/emails/${selected.id}/draft?${query}`, { method: "POST", credentials: \"include\" });
+    const response = await fetch(`${API}/emails/${selected.id}/draft?${query}`, { method: "POST", credentials: "include" });
     const data = await response.json();
     if (!response.ok) return setNotice(data.detail || "Draft creation failed");
     setNotice(`Demo draft saved: ${data.draft_id}`);
@@ -74,7 +83,7 @@ export default function App() {
       <div className="sidebar-foot">Demo mode · no live mailbox</div>
     </aside>
     <main className="main">
-      <header><div><div className="eyebrow">YOUR INBOX</div><h1>{category}</h1></div><div className="account">{user ? <><span>{user.name || user.email}</span><button className="auth-link" onClick={async () => { await fetch(API.replace(/\\/api$/, \"\") + \"/auth/logout\", { method: \"POST\", credentials: \"include\" }); setUser(null); }}>Sign out</button></> : <button className="auth-link" onClick={() => { window.location.href = API.replace(/\\/api$/, \"\") + \"/auth/google/start\"; }}>Continue with Google</button>}</div></header>
+      <header><div><div className="eyebrow">YOUR INBOX</div><h1>{category}</h1></div><div className="account">{user ? <><span>{user.name || user.email}</span><button className="auth-link" onClick={async () => { await fetch(ROOT + "/auth/logout", { method: "POST", credentials: "include" }); setUser(null); }}>Sign out</button></> : <button className="auth-link" onClick={() => { window.location.href = ROOT + "/auth/google/start"; }}>Continue with Google</button>}</div></header>
       <section className="stats">
         <div className="stat"><span>CONVERSATIONS</span><b>{emails.length}</b><small>on this page</small></div>
         <div className="stat"><span>REPLIES NEEDED</span><b>{needsReply}</b><small>in current view</small></div>
