@@ -2,7 +2,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend.agents.nodes import _enforce_analysis_rules
 from backend.agents.tool_registry import tool_registry
@@ -85,7 +85,7 @@ class MailServiceTests(unittest.IsolatedAsyncioTestCase):
             draft_id=None,
             thread_id="thread-1",
         )
-        db = SimpleNamespace(commit=unittest.mock.Mock())
+        db = SimpleNamespace(commit=Mock())
         with patch("backend.services.mail_service.get_summary", return_value=row):
             with patch(
                 "backend.services.mail_service.integration_service.create_draft",
