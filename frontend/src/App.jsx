@@ -119,12 +119,12 @@ export default function App() {
       {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       <section className="table-wrap">
         <div className="table-head"><span>SENDER / SUBJECT</span><span>AI SUMMARY</span><span>CATEGORY</span><span>PRIORITY</span></div>
-        {busy ? <div className="empty">Loading conversations…</div> : emails.map(email => <button className="email-row" key={email.id} onClick={() => openEmail(email)}>
+        {busy ? <div className="empty">Loading conversations…</div> : emails.map(email => <div className="email-row" key={email.id} role="button" tabIndex={0} onClick={() => openEmail(email)} onKeyDown={event => { if (event.key === "Enter") openEmail(email); }}>
           <span className="sender"><i>{email.sender_name.charAt(0)}</i><span><b>{email.sender_name}</b><small>{email.subject}</small></span></span>
           <span className="summary">{email.summary}<small className={`decision ${email.reply_decision}`}>{email.reply_decision.replace("_", " ")}</small></span>
           <span><select className="category-select" value={email.category} aria-label="Edit category" onClick={event => event.stopPropagation()} onChange={event => changeCategory(email, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></span>
           <span><label className={`priority ${email.priority}`}>{email.priority}</label></span>
-        </button>)}
+        </div>)}
         {!busy && emails.length === 0 && <div className="empty">No conversations found.</div>}
         <div className="pagination"><span>Page {page} of {pages}</span><div><button disabled={page <= 1} onClick={() => setPage(page - 1)}>←</button><button disabled={page >= pages} onClick={() => setPage(page + 1)}>→</button></div></div>
       </section>
@@ -132,7 +132,8 @@ export default function App() {
     {selected && <div className="scrim" onClick={() => setSelected(null)}><aside className="detail" onClick={e => e.stopPropagation()}>
       <button className="close" onClick={() => setSelected(null)}>×</button><div className="eyebrow">CONVERSATION DETAILS</div><h2>{selected.subject}</h2>
       <div className="from"><i>{selected.sender_name.charAt(0)}</i><span><b>{selected.sender_name}</b><small>{selected.sender_email}</small></span></div>
-      <div className="detail-block"><div className="eyebrow">AI SUMMARY</div><p>{selected.summary}</p></div>\n      <div className="detail-block"><div className="eyebrow">CATEGORY</div><select className="category-select" value={selected.category} onChange={event => changeCategory(selected, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></div>
+      <div className="detail-block"><div className="eyebrow">AI SUMMARY</div><p>{selected.summary}</p></div>
+      <div className="detail-block"><div className="eyebrow">CATEGORY</div><select className="category-select" value={selected.category} onChange={event => changeCategory(selected, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></div>
       <div className="detail-block"><div className="eyebrow">WHY {selected.reply_decision.replace("_", " ").toUpperCase()}</div><p>{selected.reply_reason}</p></div>
       {selected.key_points.length > 0 && <div className="detail-block"><div className="eyebrow">KEY POINTS</div><ul>{selected.key_points.map(point => <li key={point}>{point}</li>)}</ul></div>}
       {selected.reply_decision === "reply" && <div className="detail-block"><div className="eyebrow">SUGGESTED REPLY</div><textarea value={reply} onChange={e => setReply(e.target.value)} /></div>}
