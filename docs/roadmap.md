@@ -2,22 +2,23 @@
 
 ## Available now
 
-- Environment-backed service URL and app configuration in backend/config/settings.py.
-- SQLAlchemy tables for users, Gmail connections, email summaries, and sync runs.
-- SQLite local setup plus PostgreSQL URL support.
-- Demo/Google OpenID sign-in with signed session cookies.
-- Mailbox endpoints that require a signed-in session and scope data by user.
-- Database-backed pagination, filtering, search, category overrides, and draft ownership checks.
-- Mock sync, draft, and simulated-send flows plus the React dashboard.
+- Environment-backed app and service URL settings.
+- SQLAlchemy models and repositories for users, Gmail connections, email summaries, and sync runs.
+- Demo and Google OpenID sign-in with signed session cookies.
+- Authenticated, user-scoped mailbox endpoints with database pagination and manual category overrides.
+- Read-only Gmail tool functions with typed arguments and clear descriptions.
+- Explicit tool registry and signed-in tool catalog endpoint.
+- LangGraph fetch, normalize, batch classify, validate, and persist workflow.
+- Gemini structured output path and deterministic fake analysis path.
+- Mock draft creation and simulated sending, separate from agent tool capabilities.
 
 ## Next phases
 
 1. Add Alembic migrations for the current schema.
 2. Implement Gmail consent and encrypted refresh-token storage before enabling mailbox access.
-3. Add Gmail thread retrieval, MIME normalization, Gmail draft creation, and incremental history sync.
-4. Add Gemini structured classification with Pydantic validation, retry, and LangGraph orchestration.
-5. Run synchronization as a durable background job with duplicate-job protection and partial-failure reporting.
-6. Complete frontend full-thread rendering, priority/reply filters, send approval UX, and production error states.
-7. Verify multi-user isolation and complete the end-to-end scenarios from the project specification.
+3. Implement live Gmail retrieval, MIME normalization, Gmail drafts, and incremental history sync.
+4. Move sync into a durable, deduplicated background job and improve partial-failure accounting.
+5. Complete frontend priority/reply filters, full thread rendering, and production approval flow.
+6. Add integration tests for tool allowlisting, untrusted email handling, validation retries, persistence, and user isolation.
 
-Mock mode uses a local demo identity and fake data. Real OpenID mode signs in a user but does not request Gmail scopes or call Gmail APIs.
+Mock mode uses local demo identities and fake provider data. The agent registry does not include send or draft tools. Real OpenID mode signs in a user but does not request Gmail scopes or call Gmail APIs.
