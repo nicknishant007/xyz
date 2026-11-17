@@ -1,156 +1,325 @@
 import { useEffect, useMemo, useState } from "react";
+import "./style.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 const ROOT = API.endsWith("/api") ? API.slice(0, -4) : API;
 const categories = ["All Emails", "Work", "Personal", "Finance", "Receipts", "Travel", "Promotions", "Social", "Updates", "Other"];
+const decisions = [
+  ["", "All reply states"],
+  ["reply", "Reply needed"],
+  ["no_reply", "No reply"],
+  ["review", "Needs review"],
+];
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [csrfToken, setCsrfToken] = useState("");
+  const [authChecked, setAuthChecked] = useState(false);
   const [emails, setEmails] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
   const [page, setPage] = useState(1);
-  const [pages, setPages] = useState(1);
   const [category, setCategory] = useState("All Emails");
+  const [replyDecision, setReplyDecision] = useState("");
+  const [priority, setPriority] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
-  const [reply, setReply] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [replyBody, setReplyBody] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [user, setUser] = useState(null);
+  const [error, setError] = useState("");
+  const [syncStatus, setSyncStatus] = useState(null);
 
-  useEffect(() => {
-    fetch(ROOT + "/api/me", { credentials: "include" })
-      .then(response => response.ok ? response.json() : null)
-      .then(setUser)
-      .catch(() => setUser(null));
-  }, []);
-
-  async function load() {
-    setBusy(true);
-    try {
-      const query = new URLSearchParams({ page, page_size: 20 });
-      if (category !== "All Emails") query.set("category", category);
-      if (search) query.set("search", search);
-      const response = await fetch(`${API}/emails?${query}`, { credentials: "include" });
-      if (!response.ok) throw new Error("Could not load conversations");
-      const data = await response.json();
-      setEmails(data.items);
-      setPages(data.pagination.total_pages || 1);
-    } catch (error) { setNotice(error.message); }
-    finally { setBusy(false); }
+  async function apiFetch(path, options = {}) {
+    const method = (options.method || "GET").toUpperCase();
+    const headers = { ...(options.headers || {}) };
+    if (method !== "GET" && method !== "HEAD") headers["X-CSRF-Token"] = csrfToken;
+    return fetch(API + path, { ...options, method, headers, credentials: "include" });
   }
 
-  useEffect(() => { load(); }, [page, category, search]);
-  const needsReply = useMemo(() => emails.filter(e => e.reply_decision === "reply").length, [emails]);
+  useEffect(() => {
+    let active = true;
+    fetch(ROOT + "/api/me", { credentials: "include" })
+      .then(async response => response.ok ? response.json() : null)
+      .then(profile => {
+        if (!active) return;
+        setUser(profile);
+        setCsrfToken(profile?.csrf_token || "");
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setUser(null);
+        setCsrfToken("");
+        setAuthChecked(true);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setEmails([]);
+      setPagination({ page: 1, page_size: 20, total: 0, total_pages: 1 });
+      setSyncStatus(null);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      const query = new URLSearchParams({ page: String(page), page_size: "20" });
+      if (category !== "All Emails") query.set("category", category);
+      if (replyDecision) query.set("reply_decision", replyDecision);
+      if (priority) query.set("priority", priority);
+      if (search.trim()) query.set("search", search.trim());
+      try {
+        const response = await apiFetch("/emails?" + query.toString());
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Could not load conversations.");
+        if (active) {
+          setEmails(data.items);
+          setPagination(data.pagination);
+        }
+      } catch (err) {
+        if (active) setError(err.message || "Could not load conversations.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, search ? 200 : 0);
+    return () => { active = false; clearTimeout(timer); };
+  }, [user, page, category, replyDecision, priority, search, csrfToken]);
+
+  useEffect(() => {
+    if (!user) return;
+    apiFetch("/sync/status")
+      .then(response => response.ok ? response.json() : null)
+      .then(setSyncStatus)
+      .catch(() => setSyncStatus(null));
+  }, [user, csrfToken]);
+
+  const repliesOnPage = useMemo(() => emails.filter(item => item.reply_decision === "reply").length, [emails]);
+  const reviewOnPage = useMemo(() => emails.filter(item => item.reply_decision === "review").length, [emails]);
 
   async function openEmail(email) {
-    setSelected(email);
-    setReply(email.suggested_reply || "");
+    setSelected({ ...email, messages: [] });
+    setReplyBody(email.suggested_reply || "");
+    setDetailLoading(true);
+    try {
+      const response = await apiFetch("/emails/" + encodeURIComponent(email.thread_id));
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not load the conversation.");
+      setSelected(data);
+      setReplyBody(data.suggested_reply || "");
+    } catch (err) {
+      setNotice(err.message || "Could not load the conversation.");
+    } finally {
+      setDetailLoading(false);
+    }
   }
 
   async function changeCategory(email, value) {
-    const response = await fetch(`${API}/emails/${email.id}/category`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ category: value }),
-    });
-    const data = await response.json();
-    if (!response.ok) return setNotice(data.detail || "Category update failed");
-    setEmails(current => current.map(item => item.id === email.id ? data : item));
-    if (selected?.id === email.id) setSelected(data);
+    setActionBusy(true);
+    try {
+      const response = await apiFetch("/emails/" + encodeURIComponent(email.thread_id) + "/category", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: value }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Category update failed.");
+      setEmails(current => current.map(item => item.id === email.id ? data : item));
+      setSelected(current => current?.id === email.id ? { ...current, ...data } : current);
+      setNotice("Category updated.");
+    } catch (err) {
+      setError(err.message || "Category update failed.");
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function createDraft() {
-    if (!selected || !reply.trim()) return;
-    const response = await fetch(`${API}/emails/${selected.id}/draft`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: reply }),
-    });
-    const data = await response.json();
-    if (!response.ok) return setNotice(data.detail || "Draft creation failed");
-    setSelected(current => ({ ...current, draft_id: data.draft_id, draft_status: "draft" }));
-    setEmails(current => current.map(item => item.id === selected.id ? { ...item, draft_id: data.draft_id, draft_status: "draft" } : item));
-    setNotice(`Demo draft saved: ${data.draft_id}`);
+    if (!selected || !replyBody.trim()) return;
+    setActionBusy(true);
+    try {
+      const response = await apiFetch("/emails/" + encodeURIComponent(selected.thread_id) + "/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: replyBody }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Draft creation failed.");
+      setSelected(current => ({ ...current, draft_id: data.draft_id, draft_status: "draft" }));
+      setEmails(current => current.map(item => item.id === selected.id ? { ...item, draft_id: data.draft_id, draft_status: "draft" } : item));
+      setNotice("Draft created. Review it before sending.");
+    } catch (err) {
+      setError(err.message || "Draft creation failed.");
+    } finally {
+      setActionBusy(false);
+    }
   }
 
-  async function sendDemoDraft() {
-    if (!selected?.draft_id) return setNotice("Create a draft first.");
-    if (!window.confirm("Simulate sending this draft? No real email will be sent.")) return;
-    const response = await fetch(`${API}/emails/${selected.id}/send`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ draft_id: selected.draft_id, confirmed: true }),
-    });
-    const data = await response.json();
-    if (response.ok) {
+  async function sendDraft() {
+    if (!selected?.draft_id || selected.draft_status !== "draft") return;
+    if (!window.confirm("Confirm this draft action? In mock mode, no email is sent.")) return;
+    setActionBusy(true);
+    try {
+      const response = await apiFetch("/emails/" + encodeURIComponent(selected.thread_id) + "/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draft_id: selected.draft_id, confirmed: true }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Send action failed.");
       setSelected(current => ({ ...current, draft_status: "sent" }));
       setEmails(current => current.map(item => item.id === selected.id ? { ...item, draft_status: "sent" } : item));
+      setNotice(data.simulated ? "Mock send completed; no email was sent." : "Draft sent.");
+    } catch (err) {
+      setError(err.message || "Send action failed.");
+    } finally {
+      setActionBusy(false);
     }
-    setNotice(response.ok ? "Demo send completed. No email was sent." : (data.detail || "Send failed"));
   }
 
-  async function sync() {
-    const response = await fetch(`${API}/sync`, { method: "POST", credentials: "include" });
-    let data = await response.json();
-    if (!response.ok) {
-      setNotice(typeof data.detail === "string" ? data.detail : (data.detail?.message || "Sync failed"));
-      return;
+  async function syncMailbox() {
+    if (!user) return;
+    setActionBusy(true);
+    setError("");
+    try {
+      const response = await apiFetch("/sync", { method: "POST" });
+      let state = await response.json();
+      if (!response.ok) throw new Error(typeof state.detail === "string" ? state.detail : (state.detail?.message || "Could not start sync."));
+      setSyncStatus(state);
+      setNotice("Mailbox sync queued.");
+      for (let attempt = 0; attempt < 40 && (state.status === "queued" || state.status === "running"); attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const statusResponse = await apiFetch("/sync/status");
+        if (statusResponse.ok) {
+          state = await statusResponse.json();
+          setSyncStatus(state);
+        }
+      }
+      if (state.status === "completed") setNotice("Sync finished: " + state.processed + " processed, " + state.failed + " failed.");
+      else if (state.status === "failed") setError("Sync failed. Review backend status and logs.");
+      else setNotice("Sync is still running. Status will remain available here.");
+      const refresh = await apiFetch("/emails?" + new URLSearchParams({ page: String(page), page_size: "20" }).toString());
+      if (refresh.ok) {
+        const data = await refresh.json();
+        setEmails(data.items);
+        setPagination(data.pagination);
+      }
+    } catch (err) {
+      setError(err.message || "Sync failed.");
+    } finally {
+      setActionBusy(false);
     }
-    setNotice("Sync queued…");
-    for (let attempt = 0; attempt < 40 && (data.status === "queued" || data.status === "running"); attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const statusResponse = await fetch(`${API}/sync/status`, { credentials: "include" });
-      if (statusResponse.ok) data = await statusResponse.json();
-    }
-    setNotice(data.status === "completed"
-      ? `Sync complete: ${data.processed} conversations, ${data.failed} needing review`
-      : data.status === "failed" ? "Sync failed. Check the server logs." : "Sync is still running.");
-    await load();
   }
+
+  async function signOut() {
+    try {
+      await apiFetch(ROOT.replace(API, "") + "/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      setCsrfToken("");
+      setSelected(null);
+      setNotice("");
+    }
+  }
+
+  if (!authChecked) return <div className="app-loading">Loading your mailbox…</div>;
 
   return <div className="layout">
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon">M</span><div>mailroom<span>AI</span></div></div>
-      <button className="compose" onClick={sync}>↻　Sync Gmail</button>
+      {user && <button className="compose" onClick={syncMailbox} disabled={actionBusy}>↻　Sync mailbox</button>}
       <div className="nav-label">MAILBOX</div>
-      {categories.map((item, i) => <button key={item} className={category === item ? "nav active" : "nav"} onClick={() => { setCategory(item); setPage(1); }}>
-        <span>{["▤","▣","♡","＄","▧","✈","◇","◎","◌","••"][i]}</span>{item}
+      {categories.map((item, index) => <button key={item} className={category === item ? "nav active" : "nav"} onClick={() => { setCategory(item); setPage(1); }}>
+        <span>{["▤", "▣", "♡", "＄", "▧", "✈", "◇", "◎", "◌", "••"][index]}</span>{item}
       </button>)}
-      <div className="sidebar-foot">Demo mode · no live mailbox</div>
+      <div className="sidebar-foot">
+        <span className={"status-dot " + (syncStatus?.status === "running" || syncStatus?.status === "queued" ? "busy" : "")}></span>
+        {syncStatus ? "Sync " + syncStatus.status : "Sign in to connect"}
+      </div>
     </aside>
+
     <main className="main">
-      <header><div><div className="eyebrow">YOUR INBOX</div><h1>{category}</h1></div><div className="account">{user ? <><span>{user.name || user.email}</span><button className="auth-link" onClick={async () => { await fetch(ROOT + "/auth/logout", { method: "POST", credentials: "include" }); setUser(null); }}>Sign out</button></> : <button className="auth-link" onClick={() => { window.location.href = ROOT + "/auth/google/start"; }}>Continue with Google</button>}</div></header>
-      <section className="stats">
-        <div className="stat"><span>CONVERSATIONS</span><b>{emails.length}</b><small>on this page</small></div>
-        <div className="stat"><span>REPLIES NEEDED</span><b>{needsReply}</b><small>in current view</small></div>
-        <div className="stat"><span>NEEDS REVIEW</span><b>{emails.filter(e => e.reply_decision === "review").length}</b><small>in current view</small></div>
-      </section>
-      <section className="toolbar"><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search conversations…" /><select aria-label="Reply filter" onChange={e => setNotice(e.target.value ? `Filter: ${e.target.value} (demo view)` : "")}><option value="">All reply states</option><option value="reply">Reply needed</option><option value="no_reply">No reply</option><option value="review">Review</option></select><button className="sync" onClick={sync}>↻ Sync</button></section>
-      {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
-      <section className="table-wrap">
-        <div className="table-head"><span>SENDER / SUBJECT</span><span>AI SUMMARY</span><span>CATEGORY</span><span>PRIORITY</span></div>
-        {busy ? <div className="empty">Loading conversations…</div> : emails.map(email => <div className="email-row" key={email.id} role="button" tabIndex={0} onClick={() => openEmail(email)} onKeyDown={event => { if (event.key === "Enter") openEmail(email); }}>
-          <span className="sender"><i>{email.sender_name.charAt(0)}</i><span><b>{email.sender_name}</b><small>{email.subject}</small></span></span>
-          <span className="summary">{email.summary}<small className={`decision ${email.reply_decision}`}>{email.reply_decision.replace("_", " ")}</small></span>
-          <span><select className="category-select" value={email.category} aria-label="Edit category" onClick={event => event.stopPropagation()} onChange={event => changeCategory(email, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></span>
-          <span><label className={`priority ${email.priority}`}>{email.priority}</label></span>
-        </div>)}
-        {!busy && emails.length === 0 && <div className="empty">No conversations found.</div>}
-        <div className="pagination"><span>Page {page} of {pages}</span><div><button disabled={page <= 1} onClick={() => setPage(page - 1)}>←</button><button disabled={page >= pages} onClick={() => setPage(page + 1)}>→</button></div></div>
-      </section>
+      <header>
+        <div><div className="eyebrow">YOUR INBOX</div><h1>{category}</h1></div>
+        <div className="account">
+          {user ? <><span>{user.name || user.email}</span><button className="auth-link" onClick={signOut}>Sign out</button></> :
+            <button className="auth-link" onClick={() => { window.location.href = ROOT + "/auth/google/start"; }}>Continue with Google</button>}
+        </div>
+      </header>
+
+      {!user ? <section className="signin-card">
+        <div className="brand-icon">M</div><h2>Sign in to manage your mail</h2>
+        <p>Connect with Google to view, classify, and draft replies for your conversations.</p>
+        <button className="compose" onClick={() => { window.location.href = ROOT + "/auth/google/start"; }}>Continue with Google</button>
+        <small>Mock mode uses sample conversations. It does not access Gmail or send messages.</small>
+      </section> : <>
+        <section className="stats">
+          <div className="stat"><span>CONVERSATIONS</span><b>{pagination.total}</b><small>matching filters</small></div>
+          <div className="stat"><span>REPLIES NEEDED</span><b>{repliesOnPage}</b><small>on this page</small></div>
+          <div className="stat"><span>NEEDS REVIEW</span><b>{reviewOnPage}</b><small>on this page</small></div>
+        </section>
+
+        <section className="toolbar">
+          <input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Search sender, subject, or summary…" aria-label="Search conversations" />
+          <select value={replyDecision} onChange={event => { setReplyDecision(event.target.value); setPage(1); }} aria-label="Filter by reply decision">
+            {decisions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <select value={priority} onChange={event => { setPriority(event.target.value); setPage(1); }} aria-label="Filter by priority">
+            <option value="">All priorities</option><option value="high">High priority</option><option value="medium">Medium priority</option><option value="low">Low priority</option>
+          </select>
+          <button className="sync" onClick={syncMailbox} disabled={actionBusy}>↻ Sync</button>
+        </section>
+
+        {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
+        {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
+
+        <section className="table-wrap">
+          <div className="table-head"><span>SENDER / SUBJECT</span><span>AI SUMMARY</span><span>CATEGORY</span><span>PRIORITY</span></div>
+          {loading ? <div className="empty">Loading conversations…</div> : emails.map(email => <div className="email-row" key={email.id} role="button" tabIndex={0} onClick={() => openEmail(email)} onKeyDown={event => {
+            if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openEmail(email); }
+          }}>
+            <span className="sender"><i>{(email.sender_name || "?").charAt(0)}</i><span><b>{email.sender_name}</b><small>{email.subject}</small><small>{email.sender_email}</small></span></span>
+            <span className="summary">{email.summary}<small className={"decision " + email.reply_decision}>{email.reply_decision.replace("_", " ")}</small></span>
+            <span><select className="category-select" value={email.category} aria-label={"Category for " + email.subject} disabled={actionBusy} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onChange={event => changeCategory(email, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></span>
+            <span><label className={"priority " + email.priority}>{email.priority}</label></span>
+          </div>)}
+          {!loading && emails.length === 0 && <div className="empty">{error ? "Could not load conversations." : "No conversations match these filters."}</div>}
+          <div className="pagination"><span>{pagination.total} conversations · Page {page} of {pagination.total_pages || 1}</span><div>
+            <button disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>←</button>
+            <button disabled={page >= (pagination.total_pages || 1) || loading} onClick={() => setPage(page + 1)}>→</button>
+          </div></div>
+        </section>
+      </>}
+
+      {selected && <div className="scrim" onClick={() => setSelected(null)}><aside className="detail" onClick={event => event.stopPropagation()}>
+        <button className="close" onClick={() => setSelected(null)} aria-label="Close details">×</button>
+        <div className="eyebrow">CONVERSATION DETAILS</div><h2>{selected.subject}</h2>
+        <div className="from"><i>{(selected.sender_name || "?").charAt(0)}</i><span><b>{selected.sender_name}</b><small>{selected.sender_email}</small></span></div>
+        {detailLoading ? <div className="empty">Loading conversation…</div> : <>
+          <div className="detail-block"><div className="eyebrow">AI SUMMARY</div><p>{selected.summary}</p></div>
+          <div className="detail-block"><div className="eyebrow">CATEGORY</div><select className="category-select" value={selected.category} disabled={actionBusy} onChange={event => changeCategory(selected, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></div>
+          <div className="detail-block"><div className="eyebrow">PRIORITY · {selected.priority}</div><div className={"priority " + selected.priority}>{selected.priority}</div></div>
+          <div className="detail-block"><div className="eyebrow">REPLY DECISION · {selected.reply_decision.replace("_", " ")}</div><p>{selected.reply_reason}</p></div>
+          {selected.key_points?.length > 0 && <div className="detail-block"><div className="eyebrow">KEY POINTS</div><ul>{selected.key_points.map(point => <li key={point}>{point}</li>)}</ul></div>}
+          <div className="detail-block"><div className="eyebrow">FULL CONVERSATION</div>
+            {selected.messages?.length ? selected.messages.map(message => <article className={"message " + (message.is_user ? "own" : "")} key={message.message_id}>
+              <div className="message-meta"><b>{message.sender_name || message.sender_email}</b><time>{new Date(message.timestamp).toLocaleString()}</time></div>
+              <div className="message-body">{message.body_text}</div>
+            </article>) : <p className="muted">No original message content was returned.</p>}
+          </div>
+          {selected.reply_decision === "reply" && <div className="detail-block"><label className="eyebrow" htmlFor="reply-body">SUGGESTED REPLY</label><textarea id="reply-body" value={replyBody} disabled={actionBusy} onChange={event => setReplyBody(event.target.value)} /></div>}
+          <div className="detail-actions">
+            {selected.reply_decision === "reply" && selected.draft_status !== "sent" && <button className="sync" onClick={createDraft} disabled={actionBusy || !replyBody.trim()}>{selected.draft_status === "draft" ? "Update demo draft" : "Create demo draft"}</button>}
+            {selected.draft_status === "draft" && <button className="send" onClick={sendDraft} disabled={actionBusy}>Review & simulate send</button>}
+            {selected.draft_status === "sent" && <span className="muted">Demo send completed</span>}
+          </div>
+          <small className="disclaimer">Mock mode only. This demo cannot access Gmail or send real mail.</small>
+        </>}
+      </aside></div>}
     </main>
-    {selected && <div className="scrim" onClick={() => setSelected(null)}><aside className="detail" onClick={e => e.stopPropagation()}>
-      <button className="close" onClick={() => setSelected(null)}>×</button><div className="eyebrow">CONVERSATION DETAILS</div><h2>{selected.subject}</h2>
-      <div className="from"><i>{selected.sender_name.charAt(0)}</i><span><b>{selected.sender_name}</b><small>{selected.sender_email}</small></span></div>
-      <div className="detail-block"><div className="eyebrow">AI SUMMARY</div><p>{selected.summary}</p></div>
-      <div className="detail-block"><div className="eyebrow">CATEGORY</div><select className="category-select" value={selected.category} onChange={event => changeCategory(selected, event.target.value)}>{categories.slice(1).map(value => <option key={value}>{value}</option>)}</select></div>
-      <div className="detail-block"><div className="eyebrow">WHY {selected.reply_decision.replace("_", " ").toUpperCase()}</div><p>{selected.reply_reason}</p></div>
-      {selected.key_points.length > 0 && <div className="detail-block"><div className="eyebrow">KEY POINTS</div><ul>{selected.key_points.map(point => <li key={point}>{point}</li>)}</ul></div>}
-      {selected.reply_decision === "reply" && <div className="detail-block"><div className="eyebrow">SUGGESTED REPLY</div><textarea value={reply} onChange={e => setReply(e.target.value)} /></div>}
-      <div className="detail-actions"><button className="sync" onClick={createDraft}>Create demo draft</button><button className="send" disabled={!selected.draft_id || selected.draft_status === "sent"} onClick={sendDemoDraft}>{selected.draft_status === "sent" ? "Already simulated" : "Simulate send…"}</button></div>
-      <small className="disclaimer">Mock mode only. This demo cannot access Gmail or send mail.</small>
-    </aside></div>}
   </div>;
 }
