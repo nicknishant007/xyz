@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
 from backend.api.security import require_csrf
 from backend.agents.tool_registry import tool_registry
+from backend.agents.chat_graph import run_chat_agent
 from backend.database.models import EmailSummary, SyncRun, User
 from backend.database.session import get_db
 from backend.services.sync_service import execute_sync_job
@@ -19,6 +20,7 @@ from backend.repositories.email_repository import (
 )
 from backend.services.integration_service import integration_service
 from backend.services.mail_service import create_important_reply_draft
+from backend.schemas.agent import AgentChatRequest, AgentChatResponse
 from backend.schemas.email import (
     CategoryUpdate,
     DraftRequest,
@@ -152,6 +154,17 @@ def sync_mailbox(
         processed=run.processed,
         failed=run.failed,
     )
+
+@router.post("/agent/chat", response_model=AgentChatResponse)
+async def agent_chat(
+    payload: AgentChatRequest,
+    user: User = Depends(get_current_user),
+    csrf_token: str = Depends(require_csrf),
+):
+    """Run one bounded Gemini request that may call allowlisted mailbox tools."""
+    result = await run_chat_agent(user.id, payload.message)
+    return AgentChatResponse.model_validate(result)
+
 
 @router.get("/agent/tools")
 def list_agent_tools(
