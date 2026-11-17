@@ -9,7 +9,7 @@ from backend.agents.state import AnalysisState
 from backend.agents.tool_registry import tool_registry
 from backend.config.settings import settings
 from backend.repositories.email_repository import upsert_summaries
-from backend.schemas.email import EmailAnalysis
+from backend.schemas.email import EmailAnalysis, ReplyDecision
 
 
 def normalize_thread(row: dict[str, Any]) -> dict[str, Any]:
@@ -84,7 +84,11 @@ async def classify_thread(thread: dict[str, Any], *, repair: bool = False) -> Em
             HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
         ])
         analysis = EmailAnalysis.model_validate(result)
-        return _enforce_analysis_rules(analysis, thread["thread_id"])
+        return _enforce_analysis_rules(
+            analysis,
+            thread["thread_id"],
+            latest_sender_is_user=thread.get("latest_sender_is_user", False),
+        )
     except Exception:
         if not repair:
             return await classify_thread(thread, repair=True)
@@ -95,7 +99,10 @@ async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
     if settings.mock_integrations:
         return [_mock_analysis(thread) for thread in threads]
 
-    model = _get_structured_model(EmailAnalysisBatch)
+    try:
+        model = _get_structured_model(EmailAnalysisBatch)
+    except Exception:
+        return [_review_fallback(thread["thread_id"]) for thread in threads]
     expected_ids = [thread["thread_id"] for thread in threads]
     payload = [
         {
@@ -127,7 +134,11 @@ async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
         try:
             if len(candidates) != 1:
                 raise ValueError("Expected exactly one analysis for this thread.")
-            valid[thread_id] = _enforce_analysis_rules(candidates[0], thread_id)
+            valid[thread_id] = _enforce_analysis_rules(
+                candidates[0],
+                thread_id,
+                latest_sender_is_user=thread.get("latest_sender_is_user", False),
+            )
         except Exception:
             invalid_threads.append(thread)
 
@@ -145,15 +156,34 @@ async def _retry_batch_individually(
     for thread in threads:
         try:
             analysis = await classify_thread(thread, repair=True)
-            repaired.append(_enforce_analysis_rules(analysis, thread["thread_id"]))
+            repaired.append(
+                _enforce_analysis_rules(
+                    analysis,
+                    thread["thread_id"],
+                    latest_sender_is_user=thread.get("latest_sender_is_user", False),
+                )
+            )
         except Exception:
             repaired.append(_review_fallback(thread["thread_id"]))
     return repaired
 
 
-def _enforce_analysis_rules(analysis: EmailAnalysis, expected_thread_id: str) -> EmailAnalysis:
+def _enforce_analysis_rules(
+    analysis: EmailAnalysis,
+    expected_thread_id: str,
+    *,
+    latest_sender_is_user: bool = False,
+) -> EmailAnalysis:
     if analysis.thread_id != expected_thread_id:
         raise ValueError("Analysis thread ID does not match the input.")
+    if latest_sender_is_user:
+        return analysis.model_copy(
+            update={
+                "reply_decision": ReplyDecision.no_reply,
+                "reply_reason": "The latest message was sent by the user.",
+                "suggested_reply": None,
+            }
+        )
     if analysis.reply_decision.value == "reply" and not (analysis.suggested_reply or "").strip():
         raise ValueError("A reply decision requires a non-empty suggested reply.")
     if analysis.reply_decision.value != "reply" and analysis.suggested_reply:
@@ -223,6 +253,7 @@ async def validate_analyses_node(state: AnalysisState) -> dict[str, Any]:
             analysis = _enforce_analysis_rules(
                 EmailAnalysis.model_validate(results[index]),
                 thread["thread_id"],
+                latest_sender_is_user=thread.get("latest_sender_is_user", False),
             )
         except Exception:
             try:
