@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class Category(str, Enum):
     work = "Work"
+    important = "Important"
     personal = "Personal"
     finance = "Finance"
     receipts = "Receipts"
