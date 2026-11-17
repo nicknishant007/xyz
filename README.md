@@ -26,7 +26,16 @@ Open http://localhost:5173. In default mock mode, **Continue with Google** creat
 
 ## Agent workflow
 
-The read-only tool registry is in backend/agents/tool_registry.py. Inspect its names, descriptions, and Pydantic input schemas at GET /api/agent/tools after sign-in. The graph fetches threads, normalizes messages, classifies in batches with bounded concurrency, validates the results, and persists per-user summaries. Email text is treated as untrusted content. The model cannot create drafts or send mail.
+The allowlisted tool registry is in backend/agents/tool_registry.py. Inspect tool names, descriptions, input schemas, and side-effect classes at GET /api/agent/tools after sign-in.
+
+| Tool | Side effect |
+| --- | --- |
+| list_gmail_threads | Read mailbox thread metadata |
+| get_gmail_thread | Read one conversation |
+| get_gmail_profile | Read mock mailbox profile |
+| create_important_reply_draft_tool | Create a draft only |
+
+The LangGraph workflow fetches threads, normalizes messages, classifies in batches with bounded concurrency, validates the results, and saves per-user summaries. It then creates a draft only when the saved conversation category is Important and the reply decision is reply. The mail service checks ownership and both conditions again. Email text is untrusted input; the classifier never sends mail. Sending remains a user-confirmed UI action, and mock mode simulates it without contacting Gmail.
 
 Mock mode uses deterministic fixture analysis. With mock mode disabled, the classifier is configured for Gemini structured output using GEMINI_API_KEY and GEMINI_MODEL. The live Gmail adapter is not implemented yet.
 
