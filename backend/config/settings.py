@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api"
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
+    cookie_secure: bool = False
 
     mock_integrations: bool = True
     mock_gmail_api_url: str = "http://localhost:8000/mock/gmail"
