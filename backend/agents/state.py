@@ -9,4 +9,5 @@ class AnalysisState(TypedDict, total=False):
     normalized_threads: list[dict[str, Any]]
     analyses: list[dict[str, Any]]
     persisted_count: int
+    failed_count: int
     error: str | None
