@@ -3,14 +3,14 @@
 ## Available now
 
 - Environment-backed app and service URL settings.
-- SQLAlchemy models and repositories for users, Gmail connections, email summaries, and sync runs.
+- Alembic-managed schema, SQLAlchemy models, and repositories for users, Gmail connections, email summaries, and sync runs.
 - Demo and Google OpenID sign-in with signed session cookies.
 - Authenticated, user-scoped mailbox endpoints with database pagination and manual category overrides.
 - Read-only Gmail tool functions with typed arguments and clear descriptions.
 - Explicit tool registry and signed-in tool catalog endpoint.
 - LangGraph fetch, normalize, batch classify, validate, and persist workflow.
 - Gemini structured output path and deterministic fake analysis path.
-- Mock draft creation and simulated sending, separate from agent tool capabilities.
+- Per-user FastAPI background sync jobs with persisted status and duplicate-job protection.\n- Mock draft creation and simulated sending, separate from agent tool capabilities.
 
 ## Next phases
 
