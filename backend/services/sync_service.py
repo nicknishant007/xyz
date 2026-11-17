@@ -23,7 +23,7 @@ async def execute_sync_job(user_id: str, job_id: str) -> None:
         if run is not None:
             run.status = "completed"
             run.processed = result.get("persisted_count", 0)
-            run.failed = result.get("failed_count", 0)
+            run.failed = result.get("failed_count", 0) + result.get("draft_failed_count", 0)
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
     except Exception:
