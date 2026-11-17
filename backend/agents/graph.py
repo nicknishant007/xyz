@@ -2,6 +2,7 @@
 from langgraph.graph import END, START, StateGraph
 from backend.agents.nodes import (
     classify_threads_node,
+    create_important_reply_drafts_node,
     fetch_threads_node,
     normalize_threads_node,
     persist_analyses_node,
@@ -17,12 +18,14 @@ def build_analysis_graph():
     graph.add_node("classify_threads", classify_threads_node)
     graph.add_node("validate_analyses", validate_analyses_node)
     graph.add_node("persist_analyses", persist_analyses_node)
+    graph.add_node("create_important_reply_drafts", create_important_reply_drafts_node)
     graph.add_edge(START, "fetch_threads")
     graph.add_edge("fetch_threads", "normalize_threads")
     graph.add_edge("normalize_threads", "classify_threads")
     graph.add_edge("classify_threads", "validate_analyses")
     graph.add_edge("validate_analyses", "persist_analyses")
-    graph.add_edge("persist_analyses", END)
+    graph.add_edge("persist_analyses", "create_important_reply_drafts")
+    graph.add_edge("create_important_reply_drafts", END)
     return graph.compile()
 
 
