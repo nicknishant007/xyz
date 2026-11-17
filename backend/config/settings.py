@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    agent_concurrency: int = 5
+    sync_max_threads: int = 200
     session_secret: str = "development-only-change-me"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
