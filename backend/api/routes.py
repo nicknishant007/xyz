@@ -18,6 +18,7 @@ from backend.repositories.email_repository import (
     set_category,
 )
 from backend.services.integration_service import integration_service
+from backend.services.mail_service import create_important_reply_draft
 from backend.schemas.email import (
     CategoryUpdate,
     DraftRequest,
@@ -197,13 +198,17 @@ async def create_draft(
     if not body or not body.strip():
         raise HTTPException(status_code=422, detail="A non-empty reply body is required.")
     try:
-        result = await integration_service.create_draft(row.thread_id, body)
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    row.draft_id = result["draft_id"]
-    row.draft_status = "draft"
-    db.commit()
-    return result
+        return await create_important_reply_draft(
+            db, user.id, row.thread_id, body, reuse_existing=False
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Conversation not found.") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Draft provider is unavailable.") from exc
 
 
 @router.post("/emails/{email_id}/send")
@@ -217,6 +222,11 @@ async def send_draft(
     row = get_summary(db, user.id, email_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    if row.category != "Important" or row.reply_decision != "reply":
+        raise HTTPException(
+            status_code=403,
+            detail="Replies are allowed only for Important conversations approved for reply.",
+        )
     if not payload.confirmed:
         raise HTTPException(status_code=400, detail="Explicit confirmation is required.")
     if row.draft_status != "draft" or not row.draft_id:
