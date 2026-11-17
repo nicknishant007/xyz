@@ -3,7 +3,7 @@ import "./style.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 const ROOT = API.endsWith("/api") ? API.slice(0, -4) : API;
-const categories = ["All Emails", "Work", "Personal", "Finance", "Receipts", "Travel", "Promotions", "Social", "Updates", "Other"];
+const categories = ["All Emails", "Important", "Work", "Personal", "Finance", "Receipts", "Travel", "Promotions", "Social", "Updates", "Other"];
 const decisions = [
   ["", "All reply states"],
   ["reply", "Reply needed"],
@@ -246,7 +246,7 @@ export default function App() {
       {user && <button className="compose" onClick={syncMailbox} disabled={actionBusy}>↻　Sync mailbox</button>}
       <div className="nav-label">MAILBOX</div>
       {categories.map((item, index) => <button key={item} className={category === item ? "nav active" : "nav"} onClick={() => { setCategory(item); setPage(1); }}>
-        <span>{["▤", "▣", "♡", "＄", "▧", "✈", "◇", "◎", "◌", "••"][index]}</span>{item}
+        <span>{["▤", "!", "▣", "♡", "＄", "▧", "✈", "◇", "◎", "◌", "••"][index]}</span>{item}
       </button>)}
       <div className="sidebar-foot">
         <span className={"status-dot " + (syncStatus?.status === "running" || syncStatus?.status === "queued" ? "busy" : "")}></span>
