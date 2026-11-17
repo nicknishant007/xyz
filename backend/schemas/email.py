@@ -60,3 +60,16 @@ class SyncStatus(BaseModel):
     processed: int = 0
     failed: int = 0
     last_successful_sync: datetime | None = None
+
+
+class CategoryUpdate(BaseModel):
+    category: Category
+
+
+class DraftRequest(BaseModel):
+    body: str | None = Field(default=None, max_length=20000)
+
+
+class SendRequest(BaseModel):
+    draft_id: str | None = None
+    confirmed: bool = False
