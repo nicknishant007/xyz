@@ -42,7 +42,7 @@ def _as_item(row: EmailSummary) -> EmailItem:
         key_points=row.key_points or [],
         deadline=row.deadline,
         suggested_reply=row.suggested_reply,
-        draft_status=row.draft_status,
+        draft_status=row.draft_status,\n        draft_id=row.draft_id,
     )
 
 
