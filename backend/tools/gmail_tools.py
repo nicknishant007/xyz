@@ -55,7 +55,7 @@ async def get_gmail_profile() -> dict:
     return await integration_service.get_profile()
 
 
-@tool(args_schema=CreateImportantReplyDraftInput, metadata={"side_effects": "creates_draft"})
+@tool(args_schema=CreateImportantReplyDraftInput)
 async def create_important_reply_draft_tool(user_id: str, thread_id: str, body: str) -> dict:
     """Create a reply draft only when the saved conversation category is Important.
 
