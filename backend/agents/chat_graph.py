@@ -42,12 +42,12 @@ async def call_agent_node(state: ChatAgentState) -> dict[str, Any]:
             "agent_turns": state.get("agent_turns", 0) + 1,
         }
 
-    model = create_gemini_chat_model().bind_tools(list(tool_registry.get_all()))
     messages = [SystemMessage(content=AGENT_SYSTEM_PROMPT), *state.get("messages", [])]
     llm_calls = state.get("llm_calls", 0)
     for attempt in range(MAX_LLM_RETRIES + 1):
         llm_calls += 1
         try:
+            model = create_gemini_chat_model().bind_tools(list(tool_registry.get_all()))
             response = await model.ainvoke(messages)
             return {
                 "messages": [response],
@@ -103,6 +103,13 @@ async def execute_tools_node(state: ChatAgentState) -> dict[str, Any]:
         if name == "create_important_reply_draft_tool":
             # Do not trust a model-supplied identity; always use the authenticated session.
             args["user_id"] = state["user_id"]
+
+        if name == "list_gmail_threads":
+            # Keep interactive queries small even if Gemini asks for more rows.
+            try:
+                args["limit"] = min(max(int(args.get("limit", 10)), 1), 25)
+            except (TypeError, ValueError):
+                args["limit"] = 10
 
         safe_error = "Tool failed. Check the request and try a narrower query."
         for attempt in range(MAX_TOOL_RETRIES + 1):
