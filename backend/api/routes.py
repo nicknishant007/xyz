@@ -2,14 +2,14 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
-from backend.agents.graph import run_analysis_workflow
 from backend.agents.tool_registry import tool_registry
 from backend.database.models import EmailSummary, SyncRun, User
 from backend.database.session import get_db
+from backend.services.sync_service import execute_sync_job
 from backend.repositories.email_repository import (
     get_summary,
     list_summaries,
@@ -100,44 +100,33 @@ def update_category(
     return _as_item(set_category(db, row, payload.category.value))
 
 
-@router.post("/sync", response_model=SyncStatus)
-async def sync_mailbox(
+@router.post("/sync", response_model=SyncStatus, status_code=202)
+def sync_mailbox(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     running = db.scalar(
-        select(SyncRun).where(SyncRun.user_id == user.id, SyncRun.status == "running")
+        select(SyncRun).where(
+            SyncRun.user_id == user.id,
+            SyncRun.status.in_(( "queued", "running" )),
+        )
     )
     if running is not None:
-        raise HTTPException(status_code=409, detail="A mailbox sync is already running.")
-    run = SyncRun(id=uuid4().hex, user_id=user.id, status="running")
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "A mailbox sync is already running.", "job_id": running.id},
+        )
+    run = SyncRun(id=uuid4().hex, user_id=user.id, status="queued")
     db.add(run)
     db.commit()
-    try:
-        workflow_result = await run_analysis_workflow(user.id, db)
-        processed = workflow_result.get("persisted_count", 0)
-        run.status = "completed"
-        run.processed = processed
-        run.failed = workflow_result.get("failed_count", 0)
-        run.finished_at = datetime.now(timezone.utc)
-        db.commit()
-        return SyncStatus(
-            job_id=run.id,
-            status=run.status,
-            processed=run.processed,
-            failed=run.failed,
-            last_successful_sync=run.finished_at,
-        )
-    except Exception as exc:
-        db.rollback()
-        run = db.get(SyncRun, run.id)
-        if run is not None:
-            run.status = "failed"
-            run.error_message = str(exc)[:1000]
-            run.finished_at = datetime.now(timezone.utc)
-            db.commit()
-        raise HTTPException(status_code=502, detail="Mailbox sync failed.") from exc
-
+    background_tasks.add_task(execute_sync_job, user.id, run.id)
+    return SyncStatus(
+        job_id=run.id,
+        status=run.status,
+        processed=run.processed,
+        failed=run.failed,
+    )
 
 @router.get("/agent/tools")
 def list_agent_tools(
