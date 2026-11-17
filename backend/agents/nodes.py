@@ -106,26 +106,49 @@ async def _classify_batch(threads: list[dict[str, Any]]) -> list[EmailAnalysis]:
         }
         for thread in threads
     ]
-    for attempt in range(2):
-        system_prompt = CLASSIFY_EMAIL_SYSTEM_PROMPT
-        if attempt:
-            system_prompt += "\n" + REPAIR_OUTPUT_PROMPT
+    try:
+        result = await model.ainvoke([
+            SystemMessage(content=CLASSIFY_EMAIL_SYSTEM_PROMPT),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+        ])
+        batch = EmailAnalysisBatch.model_validate(result)
+    except Exception:
+        return await _retry_batch_individually(threads)
+
+    grouped: dict[str, list[EmailAnalysis]] = {}
+    for analysis in batch.analyses:
+        grouped.setdefault(analysis.thread_id, []).append(analysis)
+
+    valid: dict[str, EmailAnalysis] = {}
+    invalid_threads: list[dict[str, Any]] = []
+    for thread in threads:
+        thread_id = thread["thread_id"]
+        candidates = grouped.get(thread_id, [])
         try:
-            result = await model.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-            ])
-            batch = EmailAnalysisBatch.model_validate(result)
-            by_id = {item.thread_id: item for item in batch.analyses}
-            if len(by_id) != len(expected_ids) or set(by_id) != set(expected_ids):
-                raise ValueError("Batch output must contain one result for every input thread ID.")
-            return [
-                _enforce_analysis_rules(by_id[thread_id], thread_id)
-                for thread_id in expected_ids
-            ]
+            if len(candidates) != 1:
+                raise ValueError("Expected exactly one analysis for this thread.")
+            valid[thread_id] = _enforce_analysis_rules(candidates[0], thread_id)
         except Exception:
-            continue
-    return [_review_fallback(thread_id) for thread_id in expected_ids]
+            invalid_threads.append(thread)
+
+    if invalid_threads:
+        repaired = await _retry_batch_individually(invalid_threads)
+        valid.update({thread["thread_id"]: analysis for thread, analysis in zip(invalid_threads, repaired)})
+    return [valid.get(thread_id, _review_fallback(thread_id)) for thread_id in expected_ids]
+
+
+async def _retry_batch_individually(
+    threads: list[dict[str, Any]],
+) -> list[EmailAnalysis]:
+    """Retry only conversations whose batch result was missing or invalid."""
+    repaired: list[EmailAnalysis] = []
+    for thread in threads:
+        try:
+            analysis = await classify_thread(thread, repair=True)
+            repaired.append(_enforce_analysis_rules(analysis, thread["thread_id"]))
+        except Exception:
+            repaired.append(_review_fallback(thread["thread_id"]))
+    return repaired
 
 
 def _enforce_analysis_rules(analysis: EmailAnalysis, expected_thread_id: str) -> EmailAnalysis:
