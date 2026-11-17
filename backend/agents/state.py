@@ -10,4 +10,6 @@ class AnalysisState(TypedDict, total=False):
     analyses: list[dict[str, Any]]
     persisted_count: int
     failed_count: int
+    draft_created_count: int
+    draft_failed_count: int
     error: str | None
