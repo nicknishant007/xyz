@@ -1,10 +1,13 @@
 """Authenticated, database-backed mailbox endpoints."""
+from dataclasses import asdict
 from datetime import datetime, timezone
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.api.dependencies import get_current_user
+from backend.agents.graph import run_analysis_workflow
+from backend.agents.tool_registry import tool_registry
 from backend.database.models import EmailSummary, SyncRun, User
 from backend.database.session import get_db
 from backend.repositories.email_repository import (
@@ -113,8 +116,8 @@ async def sync_mailbox(
     db.add(run)
     db.commit()
     try:
-        rows = await integration_service.list_threads()
-        processed = upsert_summaries(db, user.id, rows)
+        workflow_result = await run_analysis_workflow(user.id, db)
+        processed = workflow_result.get("persisted_count", 0)
         run.status = "completed"
         run.processed = processed
         run.failed = 0
@@ -136,6 +139,14 @@ async def sync_mailbox(
             run.finished_at = datetime.now(timezone.utc)
             db.commit()
         raise HTTPException(status_code=502, detail="Mailbox sync failed.") from exc
+
+
+@router.get("/agent/tools")
+def list_agent_tools(
+    user: User = Depends(get_current_user),
+):
+    """Return the names, descriptions, schemas, and side-effect classes of allowed agent tools."""
+    return [asdict(description) for description in tool_registry.list_descriptions()]
 
 
 @router.get("/sync/status", response_model=SyncStatus)
